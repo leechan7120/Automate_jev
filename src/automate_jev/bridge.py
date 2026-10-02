@@ -49,6 +49,7 @@ class JsonLinesBridgeClient:
     environment: Mapping[str, str] | None = None
     _process: asyncio.subprocess.Process | None = field(default=None, init=False, repr=False)
     _request_id: int = field(default=0, init=False, repr=False)
+    _generation: int = field(default=0, init=False, repr=False)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -69,6 +70,12 @@ class JsonLinesBridgeClient:
             env=_minimal_environment(self.environment),
             limit=MAX_MESSAGE_BYTES,
         )
+        self._generation += 1
+
+    @property
+    def generation(self) -> int:
+        """Monotonically identifies the current child process lifetime."""
+        return self._generation
 
     async def close(self) -> None:
         process, self._process = self._process, None

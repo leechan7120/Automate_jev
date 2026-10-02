@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Automate Jev contributors" }]
-dependencies = ["typesafe-sdk>=0.6.0"]
+dependencies = ["jsonschema>=4.23", "typesafe-sdk>=0.6.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
@@ -19,6 +19,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 automate-jev-demo = "automate_jev.demo:main"
 automate-jev-jev-smoke = "automate_jev.live_smoke:main"
 automate-jev-windows-smoke = "automate_jev.windows_ui_smoke:main"
+automate-jev-integrated-demo = "automate_jev.integrated_demo:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/automate_jev"]

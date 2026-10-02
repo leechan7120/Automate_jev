@@ -11,6 +11,14 @@ from .registry import RegistrySnapshot
 class BridgeRuntimeAdapter:
     def __init__(self, bridge: JsonLinesBridgeClient) -> None:
         self.bridge = bridge
+        self._registered_identity: tuple[int, str, int] | None = None
+
+    async def ensure_registered(self, snapshot: RegistrySnapshot) -> None:
+        await self.bridge.start()
+        identity = (self.bridge.generation, snapshot.session_id, snapshot.version)
+        if self._registered_identity == identity:
+            return
+        await self.register(snapshot)
 
     async def register(self, snapshot: RegistrySnapshot) -> None:
         result = await self.bridge.call(
@@ -26,6 +34,11 @@ class BridgeRuntimeAdapter:
         )
         if result.get("registered") != len(snapshot.actions):
             raise ContractError("Windows Host did not register every action")
+        self._registered_identity = (
+            self.bridge.generation,
+            snapshot.session_id,
+            snapshot.version,
+        )
 
     async def observe(self) -> Observation:
         result = await self.bridge.call("observe")

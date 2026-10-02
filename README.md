@@ -47,6 +47,15 @@ Host는 현재 `notepad.fill-required-text`와 격리 테스트용 `smoke-target
 uv run python -m automate_jev.windows_ui_smoke
 ```
 
+Jev 판단부터 정책, journal, Windows Host, 결과 검증까지 하나의 경로로 실행하려면 통합 데모를 사용합니다. 기본값은 재현 가능한 `FIXTURE`이며 실 API는 명시적으로 선택해야 합니다. 두 모드 모두 confidence `0.8` 미만이면 입력하지 않습니다.
+
+```powershell
+uv run python -m automate_jev.integrated_demo --provider fixture
+uv run python -m automate_jev.integrated_demo --provider live --env-file .env
+```
+
+`schemas/workflow.schema.json` 기반 Workflow는 `automate_jev.workflow.load_workflow`로 읽습니다. 로더는 크기와 JSON 구조를 제한하고, Workflow의 action ID와 위험도가 로컬의 신뢰된 action catalog와 일치할 때만 결속합니다.
+
 ## 안전 불변식
 
 1. 모델은 등록된 action ID 외에 target이나 arguments를 만들 수 없습니다.

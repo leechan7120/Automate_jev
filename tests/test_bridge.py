@@ -35,6 +35,7 @@ async def test_json_lines_bridge_observe_and_execute_round_trip():
         registry = ActionRegistry("bridge-test")
         snapshot = registry.replace([action])
         await runtime.register(snapshot)
+        await runtime.ensure_registered(snapshot)
         with pytest.raises(BridgeError) as registration_error:
             await runtime.register(snapshot)
         assert registration_error.value.code == "INVALID_ACTION"

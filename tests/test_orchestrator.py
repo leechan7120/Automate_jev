@@ -111,3 +111,58 @@ async def test_stale_revision_fails_closed(tmp_path):
     assert result.status is RunStatus.STALE_ACTION
     assert runtime.executions == 0
     assert orchestrator.journal.state("run-1:step-1") is JournalState.UNKNOWN
+
+
+@pytest.mark.asyncio
+async def test_registry_aware_runtime_is_synchronized_before_observation(tmp_path):
+    class RegistryAwareRuntime(SimulatedRuntime):
+        def __init__(self):
+            super().__init__({"filled": False})
+            self.registered_versions = []
+
+        async def ensure_registered(self, snapshot):
+            self.registered_versions.append(snapshot.version)
+
+    registry = ActionRegistry("registered-session")
+    registry.replace([action()])
+    runtime = RegistryAwareRuntime()
+    orchestrator = AgentOrchestrator(
+        registry=registry,
+        provider=FixedDecisionProvider("demo.fill"),
+        runtime=runtime,
+        policy=PolicyGate(ApprovalService(b"test-secret")),
+        journal=ExecutionJournal(tmp_path),
+    )
+
+    result = await orchestrator.run_next(goal="fill", idempotency_key="run-1:step-1")
+
+    assert result.status is RunStatus.SUCCESS
+    assert runtime.registered_versions == [1]
+
+
+@pytest.mark.asyncio
+async def test_registry_synchronization_failure_blocks_before_provider(tmp_path):
+    class FailingRuntime(SimulatedRuntime):
+        async def ensure_registered(self, snapshot):
+            raise RuntimeError("host unavailable")
+
+    class UnexpectedProvider(FixedDecisionProvider):
+        async def choose(self, **kwargs):
+            raise AssertionError("provider must not run before registry synchronization")
+
+    registry = ActionRegistry("blocked-session")
+    registry.replace([action()])
+    runtime = FailingRuntime({"filled": False})
+    orchestrator = AgentOrchestrator(
+        registry=registry,
+        provider=UnexpectedProvider("demo.fill"),
+        runtime=runtime,
+        policy=PolicyGate(ApprovalService(b"test-secret")),
+        journal=ExecutionJournal(tmp_path),
+    )
+
+    result = await orchestrator.run_next(goal="fill", idempotency_key="run-1:step-1")
+
+    assert result.status is RunStatus.BLOCKED
+    assert "registry synchronization failed" in result.detail
+    assert runtime.executions == 0

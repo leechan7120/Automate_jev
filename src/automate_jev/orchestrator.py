@@ -71,6 +71,15 @@ class AgentOrchestrator:
     ) -> RunResult:
         if self.journal.state(idempotency_key) is not None:
             return RunResult(RunStatus.BLOCKED, detail="idempotency key already exists")
+        ensure_registered = getattr(self.runtime, "ensure_registered", None)
+        if ensure_registered is not None:
+            try:
+                await ensure_registered(self.registry.snapshot())
+            except Exception as error:
+                return RunResult(
+                    RunStatus.BLOCKED,
+                    detail=f"registry synchronization failed: {type(error).__name__}",
+                )
         observation = await self.runtime.observe()
         try:
             decision = await self.provider.choose(
