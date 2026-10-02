@@ -54,7 +54,21 @@ class DailyProgressService:
         if self.publish_enabled and self.project_root_page_id:
             root = await self.notion.fetch(self.project_root_page_id)
         summary = _summary_from_messages(messages)
-        if self.summarizer is not None:
+        if self.publish_enabled:
+            if self.summarizer is None:
+                raise ContractError("LLM summarizer is required before publishing Notion progress")
+            try:
+                summary = await self.summarizer.summarize(
+                    messages=messages,
+                    existing_root=root.text if root else "",
+                )
+            except (RuntimeError, ContractError) as error:
+                raise ContractError("LLM summary is required before publishing Notion progress") from error
+            if not summary.project_overview or not summary.implementation_approach:
+                raise ContractError(
+                    "LLM summary must include project_overview and implementation_approach"
+                )
+        elif self.summarizer is not None:
             try:
                 summary = await self.summarizer.summarize(
                     messages=messages,
@@ -352,6 +366,14 @@ def _update_root(existing: str, day: date, summary: ProgressSummary) -> str:
         "",
         f"## Current status ({day.isoformat()})",
     ]
+    for title, bullets in (
+        ("Progress", summary.progress),
+        ("Discussions", summary.discussions),
+        ("Decisions", summary.decisions),
+    ):
+        lines.extend((f"### {title}", *(f"- {bullet}" for bullet in bullets)))
+        if not bullets:
+            lines.append("- None identified.")
     for project in summary.projects:
         lines.extend(("", f"### {project.name}", project.overview or "No overview identified."))
         for title, bullets in (
