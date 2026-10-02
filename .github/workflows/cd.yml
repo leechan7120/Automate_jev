@@ -93,4 +93,5 @@ jobs:
             docker compose --env-file .env pull
             docker compose --env-file .env up -d --remove-orphans
             docker compose --env-file .env ps
-            docker image prune -f
+            docker system prune -af
+            docker builder prune -af
