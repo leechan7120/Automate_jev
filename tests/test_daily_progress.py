@@ -261,7 +261,7 @@ async def test_next_day_agenda_is_created_from_history_and_replaced_by_daily_pro
     draft = await service.prepare_next_day(date(2026, 10, 3))
     draft_create = next(arguments for _, tool, arguments in client.calls if tool == "notion-create-pages")
     assert draft["status"] == "created"
-    assert "pre-meeting agenda draft" in draft_create["pages"][0]["content"]
+    assert "일일 회의 전 agenda 초안" in draft_create["pages"][0]["content"]
     assert "Fix the retry policy" in draft_create["pages"][0]["content"]
 
     await service.collect_and_publish(date(2026, 10, 4))

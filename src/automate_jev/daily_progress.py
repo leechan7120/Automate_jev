@@ -369,38 +369,60 @@ def _format_next_day_agenda(day: date, history: list[dict[str, str]]) -> str:
         corrections.extend(_section_bullets(content, "Decisions"))
         actions.extend(_section_bullets(content, "Next actions"))
     lines = [
-        f"# Daily Progress - {day.isoformat()}",
+        f"# 일일 진행 상황 - {day.isoformat()}",
         "",
-        "- Status: pre-meeting agenda draft",
-        f"- Based on Daily Progress: {', '.join(source_days)}",
+        "- 상태: 일일 회의 전 agenda 초안",
+        f"- 참고한 일일 진행 상황: {', '.join(source_days)}",
         "",
-        "## Problems and corrections to review",
+        "## 검토할 문제와 수정 사항",
     ]
     correction_items = _unique(corrections)
     lines.extend(f"- {item}" for item in correction_items)
     if not correction_items:
         lines.append("- None identified.")
-    lines.extend(("", "## Discussion agenda"))
+    lines.extend(("", "## 논의 안건"))
     discussion_items = _unique(discussions)
     lines.extend(f"- {item}" for item in discussion_items)
     if not discussion_items:
         lines.append("- None identified.")
-    lines.extend(("", "## Follow-up actions"))
+    lines.extend(("", "## 후속 작업"))
     action_items = _unique(actions)
     lines.extend(f"- {item}" for item in action_items)
     if not action_items:
         lines.append("- None identified.")
-    lines.extend(("", "## Source", "- Previous Daily Progress records"))
+    lines.extend(("", "## 출처", "- 이전 일일 진행 상황 기록"))
     return "\n".join(lines)[:4_000]
 
 
 def _section_bullets(content: str, title: str) -> list[str]:
-    match = re.search(rf"^## {re.escape(title)}\s*$([\s\S]*?)(?=^## |\Z)", content, re.MULTILINE)
+    titles = {
+        "Discussions": ("Discussions", "논의 사항"),
+        "Decisions": ("Decisions", "결정 사항"),
+        "Next actions": ("Next actions", "후속 작업"),
+    }.get(title, (title,))
+    match = None
+    for section_title in titles:
+        match = re.search(rf"^## {re.escape(section_title)}\s*$([\s\S]*?)(?=^## |\Z)", content, re.MULTILINE)
+        if match:
+            break
+    items = []
     if not match:
-        match = re.search(rf"^### {re.escape(title)}\s*$([\s\S]*?)(?=^### |^## |\Z)", content, re.MULTILINE)
-    if not match:
-        return []
-    return [line[2:].strip() for line in match.group(1).splitlines() if line.startswith("- ") and line[2:].strip() != "None identified."]
+        for section_title in titles:
+            match = re.search(rf"^### {re.escape(section_title)}\s*$([\s\S]*?)(?=^### |^## |\Z)", content, re.MULTILINE)
+            if match:
+                break
+    if match:
+        items.extend(
+            line[2:].strip()
+            for line in match.group(1).splitlines()
+            if line.startswith("- ") and line[2:].strip() != "None identified."
+        )
+    if title == "Next actions":
+        items.extend(
+            match.group(1).strip()
+            for match in re.finditer(r"^- (?:Next actions|후속 작업):\s*(.+)$", content, re.MULTILINE)
+        )
+    return items
 
 
 def _unique(items: list[str]) -> list[str]:
