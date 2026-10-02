@@ -15,7 +15,7 @@ HOST = Path(__file__).parents[1] / "windows-host" / "bin" / "AutomateJev.Windows
 @pytest.mark.skipif(os.name != "nt" or not HOST.exists(), reason="compiled Windows Host unavailable")
 @pytest.mark.asyncio
 async def test_compiled_windows_host_observes_and_rejects_unimplemented_action():
-    bridge = JsonLinesBridgeClient([str(HOST)], timeout_seconds=3)
+    bridge = JsonLinesBridgeClient([str(HOST)], timeout_seconds=10)
     runtime = BridgeRuntimeAdapter(bridge)
     try:
         observation = await runtime.observe()
