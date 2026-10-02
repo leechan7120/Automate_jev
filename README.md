@@ -112,7 +112,7 @@ AUTOMATE_JEV_SLACK_QUERY        날짜 필터를 대체할 Slack 검색어 (보�
 AUTOMATE_JEV_TIMEZONE           일일 집계 timezone (예: Asia/Seoul)
 AUTOMATE_JEV_LLM_ENABLED        Gemini Slack 요약 활성화 (기본 false)
 GEMINI_API_KEY                  Gemini API key (LLM 활성화 시 필요)
-GEMINI_MODEL                    Gemini 모델 (예: gemini-2.5-flash)
+GEMINI_MODEL                    Gemini 모델 (예: gemini-3.8-flash)
 NOTION_ROUTINE_PARENT_ID   Notion의 Automate Jev/Routines 부모 페이지 ID
 NOTION_DAILY_PROGRESS_PARENT_ID  Notion의 Automate Jev/Daily Progress 부모 페이지 ID
 NOTION_PROJECT_ROOT_PAGE_ID     자동 갱신할 프로젝트 root 문서의 페이지 ID

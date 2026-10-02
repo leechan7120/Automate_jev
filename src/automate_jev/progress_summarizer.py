@@ -82,7 +82,7 @@ class GeminiProgressSummarizer:
             if not raw:
                 raise ValueError("Gemini returned an empty summary")
             return _parse_summary(raw)
-        except (TimeoutError, ValueError, TypeError, json.JSONDecodeError) as error:
+        except Exception as error:
             raise RuntimeError("Gemini progress summary was invalid") from error
         finally:
             close = getattr(getattr(client, "aio", None), "aclose", None)
