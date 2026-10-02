@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
+from zoneinfo import ZoneInfo
 
 from .mcp import MCPToolClient
 from .models import ContractError
@@ -28,12 +29,15 @@ class SlackMCP:
     client: MCPToolClient
     server: str = "slack"
     search_tool: str = "slack-search-messages"
+    timezone_name: str = "UTC"
 
     async def search_messages(self, day: date, query: str = "") -> tuple[SlackMessage, ...]:
         if not isinstance(day, date):
             raise ContractError("Slack progress date is invalid")
-        next_day = day + timedelta(days=1)
-        search_query = query.strip() or f"after:{day.isoformat()} before:{next_day.isoformat()}"
+        search_query = query.strip() or (
+            f"after:{(day - timedelta(days=1)).isoformat()} "
+            f"before:{(day + timedelta(days=2)).isoformat()}"
+        )
         if len(search_query) > 512:
             raise ContractError("Slack search query is too long")
         result = await self.client.call_tool(
@@ -55,7 +59,9 @@ class SlackMCP:
                     timestamp=str(item.get("ts", item.get("timestamp", ""))),
                 )
             )
-        return tuple(messages)
+        if query.strip():
+            return tuple(messages)
+        return tuple(message for message in messages if _belongs_to_day(message, day, self.timezone_name))
 
 
 def _result_items(result: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
@@ -72,3 +78,21 @@ def _text(item: Mapping[str, Any]) -> str:
     if isinstance(raw, Mapping):
         raw = raw.get("text", raw.get("content", ""))
     return str(raw).strip()
+
+
+def _belongs_to_day(message: SlackMessage, day: date, timezone_name: str) -> bool:
+    if not message.timestamp:
+        return True
+    try:
+        local_zone = ZoneInfo(timezone_name)
+    except (KeyError, ValueError):
+        local_zone = timezone.utc
+    try:
+        timestamp = float(message.timestamp)
+        message_day = datetime.fromtimestamp(timestamp, timezone.utc).astimezone(local_zone).date()
+    except ValueError:
+        try:
+            message_day = datetime.fromisoformat(message.timestamp.replace("Z", "+00:00")).astimezone(local_zone).date()
+        except ValueError:
+            return True
+    return message_day == day

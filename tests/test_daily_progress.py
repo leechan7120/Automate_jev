@@ -6,7 +6,7 @@ from automate_jev.daily_progress import DailyProgressService
 from automate_jev.memory import LocalMemoryStore
 from automate_jev.notion import NotionMCP
 from automate_jev.progress_summarizer import ProjectSummary, ProgressSummary
-from automate_jev.slack import SlackMCP
+from automate_jev.slack import SlackMCP, SlackMessage, _belongs_to_day
 from automate_jev.daily_progress import _format_progress, _page_id
 
 
@@ -119,6 +119,12 @@ def test_page_id_accepts_json_text_content_response():
     assert _page_id({
         "content": [{"type": "text", "text": '{"page_id":"daily-page-1"}'}],
     }) == "daily-page-1"
+
+
+def test_slack_timestamp_is_filtered_in_configured_timezone():
+    message = SlackMessage("m-1", "eng", "chanh", "Korean-timezone message", "1791028800.000000")
+
+    assert _belongs_to_day(message, date(2026, 10, 3), "Asia/Seoul")
 
 
 def test_notion_progress_content_omits_raw_evidence():

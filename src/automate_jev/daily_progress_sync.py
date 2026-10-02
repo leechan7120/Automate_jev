@@ -41,6 +41,7 @@ async def sync(day: date) -> None:
                 slack_client,
                 server=os.environ.get("AUTOMATE_JEV_SLACK_SERVER", "slack"),
                 search_tool=os.environ.get("AUTOMATE_JEV_SLACK_SEARCH_TOOL", "slack-search-messages"),
+                timezone_name=os.environ.get("AUTOMATE_JEV_TIMEZONE", "UTC"),
             ),
             notion=NotionMCP(notion_client),
             memory=LocalMemoryStore(Path(os.environ.get("AUTOMATE_JEV_MEMORY_ROOT", ".automate-jev/memory"))),
