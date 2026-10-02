@@ -35,6 +35,7 @@ class CalendarEvent:
 @dataclass(frozen=True, slots=True)
 class CalendarDecision:
     events: tuple[CalendarEvent, ...]
+    rejection_reasons: tuple[str, ...] = ()
 
 
 class CalendarDecisionProvider:
@@ -158,19 +159,23 @@ def _parse_decision(
         raise ValueError("calendar decision must contain an events array")
     message_ids = {message.message_id for message in messages}
     events: list[CalendarEvent] = []
+    rejection_reasons: list[str] = []
     for item in value["events"][:8]:
         if not isinstance(item, Mapping) or item.get("confirmed") is not True:
+            rejection_reasons.append("not_confirmed")
             continue
         summary = str(item.get("summary", "")).strip()[:200]
         start_date = str(item.get("start_date", "")).strip()
         start_time = str(item.get("start_time", "")).strip()
         if not summary or not _valid_date(start_date) or not _valid_time(start_time):
+            rejection_reasons.append("invalid_summary_or_start")
             continue
         evidence_ids = tuple(
             str(identifier) for identifier in item.get("evidence_ids", [])
             if str(identifier) in message_ids
         )
         if not evidence_ids:
+            rejection_reasons.append("missing_evidence")
             continue
         end_date = str(item.get("end_date", "")).strip()
         end_time = str(item.get("end_time", "")).strip()
@@ -179,6 +184,7 @@ def _parse_decision(
             start_time = ""
             end_time = ""
         elif not _valid_time(end_time) or not end_time:
+            rejection_reasons.append("missing_end_time")
             continue
         events.append(CalendarEvent(
             summary=summary,
@@ -191,7 +197,7 @@ def _parse_decision(
             description=str(item.get("description", "")).strip()[:1_000],
             evidence_ids=evidence_ids,
         ))
-    return CalendarDecision(tuple(events))
+    return CalendarDecision(tuple(events), tuple(rejection_reasons))
 
 
 def _valid_date(value: str) -> bool:
@@ -259,6 +265,7 @@ class SlackCalendarRouter:
             "date": day.isoformat(),
             "message_count": len(messages),
             "decision_count": len(decision.events),
+            "llm_rejection_reasons": list(decision.rejection_reasons),
             "created": created,
             "skipped_duplicates": skipped,
             "llm_decision": True,
