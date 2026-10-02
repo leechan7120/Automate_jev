@@ -112,7 +112,16 @@ class NotionMCP:
 def _result_items(result: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     raw: Any = result.get("structuredContent", result.get("results", result.get("content", ())))
     if isinstance(raw, Mapping):
-        raw = raw.get("results", raw.get("content", ()))
+        if isinstance(raw.get("results"), (list, tuple)):
+            raw = raw["results"]
+        elif isinstance(raw.get("content"), (list, tuple)):
+            raw = raw["content"]
+        elif isinstance(raw.get("page"), Mapping):
+            raw = [raw["page"]]
+        elif raw.get("id"):
+            raw = [raw]
+        else:
+            raw = ()
     if isinstance(raw, (list, tuple)) and raw and all(isinstance(item, Mapping) and item.get("type") == "text" for item in raw):
         decoded: list[Mapping[str, Any]] = []
         for item in raw:

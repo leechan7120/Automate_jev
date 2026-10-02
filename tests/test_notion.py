@@ -82,3 +82,22 @@ async def test_notion_page_update_replaces_content():
             "new_str": "# Updated project overview",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_notion_fetch_accepts_single_structured_page():
+    class FetchClient:
+        async def call_tool(self, *, server, tool, arguments):
+            return {
+                "structuredContent": {
+                    "id": "page-1",
+                    "title": "Project Root",
+                    "text": "# Project overview",
+                },
+            }
+
+    page = await NotionMCP(FetchClient()).fetch("page-1")
+
+    assert page.page_id == "page-1"
+    assert page.title == "Project Root"
+    assert page.text == "# Project overview"
