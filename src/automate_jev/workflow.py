@@ -64,6 +64,24 @@ class WorkflowDefinition:
     steps: tuple[WorkflowStep, ...]
     completion: tuple[Mapping[str, Any], ...]
 
+    def payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "workflow_id": self.workflow_id,
+            "allowed_root": self.allowed_root,
+            "steps": [
+                {
+                    "id": step.id,
+                    "domain": step.domain,
+                    "action_id": step.action_id,
+                    "success": dict(step.success),
+                    "risk": step.risk,
+                }
+                for step in self.steps
+            ],
+            "completion": {"all": [dict(condition) for condition in self.completion]},
+        }
+
     def next_step(self, facts: Mapping[str, Any]) -> WorkflowStep | None:
         return next((step for step in self.steps if not step.is_satisfied(facts)), None)
 
@@ -80,6 +98,8 @@ class WorkflowDefinition:
             action = by_id.get(step.action_id)
             if action is None:
                 raise ContractError(f"workflow action is not registered: {step.action_id}")
+            if action.domain != step.domain:
+                raise ContractError(f"workflow domain does not match registered action: {step.id}")
             if action.risk.value != step.risk:
                 raise ContractError(f"workflow risk does not match registered action: {step.id}")
             bound.append(action)
@@ -98,6 +118,19 @@ def load_workflow(
         else Path(__file__).parents[2] / "schemas" / "workflow.schema.json"
     )
     document = _read_json(workflow_path, maximum_bytes=MAX_WORKFLOW_BYTES)
+    return parse_workflow(document, schema_path=schema_file)
+
+
+def parse_workflow(
+    document: Any,
+    *,
+    schema_path: str | Path | None = None,
+) -> WorkflowDefinition:
+    schema_file = (
+        Path(schema_path)
+        if schema_path is not None
+        else Path(__file__).parents[2] / "schemas" / "workflow.schema.json"
+    )
     schema = _read_json(schema_file, maximum_bytes=MAX_WORKFLOW_BYTES)
     if not isinstance(document, dict) or not isinstance(schema, dict):
         raise ContractError("workflow and schema roots must be objects")

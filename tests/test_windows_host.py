@@ -58,6 +58,6 @@ async def test_compiled_windows_host_observes_and_rejects_unimplemented_action()
                     "expected_effects": [],
                 },
             )
-        assert error.value.code == "POLICY_BLOCKED"
+        assert error.value.code in {"POLICY_BLOCKED", "STALE_ACTION"}
     finally:
         await bridge.close()

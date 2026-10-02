@@ -56,6 +56,16 @@ uv run python -m automate_jev.integrated_demo --provider live --env-file .env
 
 `schemas/workflow.schema.json` 기반 Workflow는 `automate_jev.workflow.load_workflow`로 읽습니다. 로더는 크기와 JSON 구조를 제한하고, Workflow의 action ID와 위험도가 로컬의 신뢰된 action catalog와 일치할 때만 결속합니다.
 
+영상에서 실행되지 않은 Workflow 초안을 만드는 로컬 API도 실행할 수 있습니다.
+
+```powershell
+uv run automate-jev-api
+```
+
+`POST /v1/workflows/extract`는 `video`, `provider`, `workflow_id`, `allowed_root` multipart field를 받습니다. 기본 `fixture` 모드는 자격 증명 없이 업로드 계약을 검증합니다. `live` 모드는 `.env`의 `gemini_api_key`와 `gemini_model`을 사용합니다. 업로드는 허용된 video MIME과 50MB 이하로 제한되며, 모델 결과는 로컬 Workflow schema와 action catalog 검사를 다시 통과해야 합니다. 이 API는 Workflow 초안만 반환하고 실행을 승인하지 않습니다.
+
+브라우저에서 `http://127.0.0.1:8000`을 열면 업로드와 JSON 검토 화면을 사용할 수 있습니다. `POST /v1/workflows/review`는 수정된 Workflow를 다시 검증하고 정확한 초안 해시에 결속된 단기 검토 토큰을 발급합니다. 검토 토큰은 실행 승인 토큰과 분리되어 있으며 실행 권한을 부여하지 않습니다.
+
 ## 안전 불변식
 
 1. 모델은 등록된 action ID 외에 target이나 arguments를 만들 수 없습니다.

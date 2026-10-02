@@ -10,11 +10,11 @@ from automate_jev.workflow import MAX_WORKFLOW_BYTES, load_workflow
 ROOT = Path(__file__).parents[1]
 
 
-def registered_action(action_id: str, risk: Risk) -> Action:
+def registered_action(action_id: str, risk: Risk, *, domain: str | None = None) -> Action:
     effect = "upload" if risk is Risk.CONFIRM else "read"
     return Action(
         id=action_id,
-        domain="desktop",
+        domain=domain or ("browser" if action_id.startswith("portal.") else "desktop"),
         verb="invoke",
         description=f"Trusted action {action_id}",
         expected_effects=(
