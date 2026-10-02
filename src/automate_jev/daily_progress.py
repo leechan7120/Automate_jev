@@ -89,7 +89,31 @@ class DailyProgressService:
                 )
                 notion_result = {"status": "updated", "version": version, **notion_result}
             elif marker.exists():
-                notion_result = {"status": "already_published", "version": version}
+                title = f"Daily Progress - {day.isoformat()}"
+                matches = await self.notion.search(title)
+                existing = next((page for page in matches if page.title == title), None)
+                if existing is not None:
+                    notion_result = await self.notion.update_page(
+                        page_id=existing.page_id,
+                        title=title,
+                        content=notion_content,
+                    )
+                    marker.write_text(
+                        json.dumps({"date": day.isoformat(), "version": version, "page_id": existing.page_id}),
+                        encoding="utf-8",
+                    )
+                    notion_result = {"status": "repaired", "version": version, **notion_result}
+                else:
+                    notion_result = await self.notion.publish_routine(
+                        title=title,
+                        content=notion_content,
+                        parent_id=self.notion_parent_id,
+                    )
+                    marker.write_text(
+                        json.dumps({"date": day.isoformat(), "version": version, "page_id": _page_id(notion_result)}),
+                        encoding="utf-8",
+                    )
+                    notion_result = {"status": "created", "version": version, **notion_result}
             else:
                 notion_result = await self.notion.publish_routine(
                     title=f"Daily Progress - {day.isoformat()}",
@@ -104,7 +128,7 @@ class DailyProgressService:
             if self.project_root_page_id:
                 if root is None:
                     root = await self.notion.fetch(self.project_root_page_id)
-                root_content = _update_root(root.text, day, version, summary)
+                root_content = _update_root(root.text, day, summary)
                 root_result = await self.notion.update_page(
                     page_id=self.project_root_page_id,
                     title=root.title,
@@ -304,28 +328,39 @@ def _page_id(result: Mapping[str, Any]) -> str:
     return ""
 
 
-def _update_root(existing: str, day: date, version: int, summary: ProgressSummary) -> str:
-    block = [
-        f"<!-- daily-progress:{day.isoformat()} -->",
-        f"## {day.isoformat()} (v{version})",
-        "### Progress",
-        *(f"- {bullet}" for bullet in summary.progress),
-        "### Discussions",
-        *(f"- {bullet}" for bullet in summary.discussions),
-        "### Decisions",
-        *(f"- {bullet}" for bullet in summary.decisions),
-        "### Projects identified",
-        *(f"- {project.name}: {project.overview}" for project in summary.projects),
-        *((["### Project overview", summary.project_overview] if summary.project_overview else [])),
-        "<!-- /daily-progress -->",
+def _update_root(existing: str, day: date, summary: ProgressSummary) -> str:
+    if not any((summary.project_overview, summary.implementation_approach, summary.projects)):
+        if "## Current project overview" in existing:
+            return existing[:4_000]
+        return (
+            "# Project Root\n\n"
+            "## Current project overview\n"
+            "No current project overview identified from the available Slack evidence.\n\n"
+            "## Implementation approach\n"
+            "No implementation approach identified from the available Slack evidence.\n\n"
+            "## Current status\n"
+            "- No new project summary was identified for this update."
+        )
+    lines = [
+        "# Project Root",
+        "",
+        "## Current project overview",
+        summary.project_overview or "No current project overview identified.",
+        "",
+        "## Implementation approach",
+        summary.implementation_approach or "No implementation approach identified.",
+        "",
+        f"## Current status ({day.isoformat()})",
     ]
-    marker = re.compile(
-        rf"<!-- daily-progress:{re.escape(day.isoformat())} -->.*?<!-- /daily-progress -->",
-        re.DOTALL,
-    )
-    if marker.search(existing):
-        content = marker.sub("\n".join(block), existing, count=1)
-    else:
-        block_text = "\n".join(block)
-        content = f"{existing.rstrip()}\n\n{block_text}" if existing.strip() else block_text
-    return content[:4_000]
+    for project in summary.projects:
+        lines.extend(("", f"### {project.name}", project.overview or "No overview identified."))
+        for title, bullets in (
+            ("Progress", project.progress),
+            ("Discussions", project.discussions),
+            ("Decisions", project.decisions),
+            ("Next actions", project.next_actions),
+        ):
+            lines.append(f"- {title}: {'; '.join(bullets) if bullets else 'None identified.'}")
+    if not summary.projects:
+        lines.append("- No concrete projects identified.")
+    return "\n".join(lines)[:4_000]

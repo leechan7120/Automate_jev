@@ -139,3 +139,26 @@ async def test_notion_fetch_removes_fetch_metadata_from_content():
     assert page.text == "# Human-readable notes\n\n- Decision: ship"
     assert "metadata" not in page.text
     assert "verification" not in page.text
+
+
+@pytest.mark.asyncio
+async def test_notion_fetch_keeps_managed_content_from_nested_fetch_envelope():
+    class FetchClient:
+        async def call_tool(self, *, server, tool, arguments):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": (
+                        '{"metadata":{"type":"page"},"content":"<page><content>old</content></page>"}'
+                        "\n<!-- daily-progress:2026-10-03 -->\n## 2026-10-03\n### Project overview\nClean summary\n"
+                        "<!-- /daily-progress -->"
+                    ),
+                }],
+            }
+
+    page = await NotionMCP(FetchClient()).fetch("page-1")
+
+    assert page.text == (
+        "<!-- daily-progress:2026-10-03 -->\n## 2026-10-03\n### Project overview\nClean summary\n"
+        "<!-- /daily-progress -->"
+    )

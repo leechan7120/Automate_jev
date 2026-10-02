@@ -93,7 +93,8 @@ async def test_daily_progress_updates_project_root(tmp_path):
 
     root_updates = [arguments for server, tool, arguments in client.calls if tool == "notion-update-page"]
     assert len(root_updates) == 1
-    assert "## 2026-10-03 (v1)" in root_updates[0]["new_str"]
+    assert "# Project Root" in root_updates[0]["new_str"]
+    assert "Current project overview" in root_updates[0]["new_str"]
 
 
 class StaticSummarizer:
@@ -153,3 +154,26 @@ async def test_daily_progress_creates_project_page_from_slack_summary(tmp_path):
     assert creates[1]["parent"] == {"page_id": "root-page"}
     assert "Deploy worker" in creates[1]["pages"][0]["content"]
     assert progress.notion_result["projects"][0]["name"] == "Automate Jev"
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_replaces_project_root_with_current_summary(tmp_path):
+    client = FakeMCP()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+        notion_parent_id="daily-progress-page",
+        project_root_page_id="root-page",
+        publish_enabled=True,
+        summarizer=StaticSummarizer(),
+    )
+
+    await service.collect_and_publish(date(2026, 10, 3))
+
+    root_update = next(
+        arguments for server, tool, arguments in client.calls if tool == "notion-update-page" and arguments["page_id"] == "root-page"
+    )
+    assert "# Project Root" in root_update["new_str"]
+    assert "Project overview" in root_update["new_str"]
+    assert "2026-10-03 (v1)" not in root_update["new_str"]

@@ -5,7 +5,7 @@ from automate_jev.slack import SlackMessage
 
 
 class FakeResponse:
-    text = '{"progress":["API integration shipped"],"discussions":["Reviewed rollout"],"decisions":["Agreed on daily sync"],"project_overview":"Slack-driven progress capture","projects":[{"name":"Automate Jev","overview":"Slack-driven progress capture","progress":["API integration shipped"],"discussions":["Reviewed rollout"],"decisions":["Agreed on daily sync"],"next_actions":["Deploy the worker"]}]}'
+    text = '{"progress":["API integration shipped"],"discussions":["Reviewed rollout"],"decisions":["Agreed on daily sync"],"project_overview":"Slack-driven progress capture","implementation_approach":"Slack MCP, Gemini, and Notion replace-content updates","projects":[{"name":"Automate Jev","overview":"Slack-driven progress capture","progress":["API integration shipped"],"discussions":["Reviewed rollout"],"decisions":["Agreed on daily sync"],"next_actions":["Deploy the worker"]}]}'
 
 
 class FakeAsyncAPI:
@@ -45,5 +45,6 @@ async def test_gemini_progress_summarizer_returns_structured_summary():
     assert result.discussions == ("Reviewed rollout",)
     assert result.decisions == ("Agreed on daily sync",)
     assert result.project_overview == "Slack-driven progress capture"
+    assert result.implementation_approach.startswith("Slack MCP")
     assert result.projects[0].name == "Automate Jev"
     assert result.projects[0].next_actions == ("Deploy the worker",)

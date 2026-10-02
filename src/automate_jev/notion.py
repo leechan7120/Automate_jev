@@ -177,6 +177,13 @@ def _clean_fetch_text(value: str) -> str:
         if not isinstance(decoded, Mapping) or not isinstance(decoded.get("content"), str):
             break
         text = decoded["content"].strip()
+    managed_blocks = re.findall(
+        r"<!-- (?:daily-progress|project-update):.*?<!-- /(?:daily-progress|project-update) -->",
+        text,
+        re.DOTALL,
+    )
+    if managed_blocks:
+        return "\n\n".join(block.strip() for block in managed_blocks)
     match = re.search(r"<content>\s*(.*?)\s*</content>", text, re.DOTALL)
     if match:
         text = match.group(1).strip()

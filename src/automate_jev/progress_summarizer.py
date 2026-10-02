@@ -27,6 +27,7 @@ class ProgressSummary:
     decisions: tuple[str, ...]
     project_overview: str = ""
     projects: tuple[ProjectSummary, ...] = ()
+    implementation_approach: str = ""
 
 
 class ProgressSummarizer(Protocol):
@@ -99,7 +100,7 @@ def _prompt(messages: tuple[SlackMessage, ...], existing_root: str) -> str:
     "Analyze Slack activity into strict JSON. Do not invent facts, names, dates, decisions, "
     "or progress. Each bullet must be supported by the messages. "
         "Use concise Korean when the messages are Korean, otherwise use the dominant language. "
-    "Return exactly these keys: progress, discussions, decisions, project_overview, projects. "
+    "Return exactly these keys: progress, discussions, decisions, project_overview, implementation_approach, projects. "
     "Only include a project when the messages contain enough evidence of a concrete workstream, "
     "product, feature, client, or initiative. Exclude greetings, isolated personal notes, and "
     "unrelated chatter. For each project return name, overview, progress, discussions, "
@@ -121,6 +122,7 @@ def _parse_summary(raw: str) -> ProgressSummary:
         return tuple(str(item).strip()[:300] for item in items[:8] if str(item).strip())
 
     overview = str(value.get("project_overview", "")).strip()[:1_000]
+    implementation = str(value.get("implementation_approach", "")).strip()[:1_500]
     projects: list[ProjectSummary] = []
     raw_projects = value.get("projects", [])
     if not isinstance(raw_projects, list):
@@ -139,7 +141,14 @@ def _parse_summary(raw: str) -> ProgressSummary:
             decisions=tuple(_project_bullets(raw_project, "decisions")),
             next_actions=tuple(_project_bullets(raw_project, "next_actions")),
         ))
-    return ProgressSummary(bullets("progress"), bullets("discussions"), bullets("decisions"), overview, tuple(projects))
+    return ProgressSummary(
+        bullets("progress"),
+        bullets("discussions"),
+        bullets("decisions"),
+        overview,
+        tuple(projects),
+        implementation,
+    )
 
 
 def _project_bullets(value: dict[str, Any], name: str) -> list[str]:
