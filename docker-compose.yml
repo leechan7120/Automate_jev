@@ -23,4 +23,4 @@ services:
     volumes:
       - ./data:/app/.automate-jev
       - ./mcp-auth:/root/.mcp-auth
-    command: ["sh", "-c", "while true; do automate-jev-daily-progress; sleep 86400; done"]
+    command: ["sh", "-c", "while true; do if automate-jev-daily-progress; then sleep 600; else echo 'daily progress sync failed; retrying in 5 minutes' >&2; sleep 300; fi; done"]

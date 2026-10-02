@@ -45,6 +45,15 @@ class StaticSummarizer:
         )
 
 
+class CountingSummarizer(StaticSummarizer):
+    def __init__(self):
+        self.calls = 0
+
+    async def summarize(self, *, messages, existing_root=""):
+        self.calls += 1
+        return await super().summarize(messages=messages, existing_root=existing_root)
+
+
 @pytest.mark.asyncio
 async def test_daily_progress_is_saved_and_published(tmp_path):
     client = FakeMCP()
@@ -97,7 +106,7 @@ async def test_daily_progress_does_not_create_duplicate_page_after_restart(tmp_p
     await service.collect_and_publish(date(2026, 10, 3))
 
     assert [tool for _, tool, _ in client.calls].count("notion-create-pages") == 1
-    assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 1
+    assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 0
 
 
 @pytest.mark.asyncio
@@ -207,3 +216,23 @@ async def test_daily_progress_never_publishes_raw_slack_without_llm(tmp_path):
         await service.collect_and_publish(date(2026, 10, 3))
 
     assert all(tool != "notion-create-pages" for _, tool, _ in client.calls)
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_skips_llm_when_slack_is_unchanged(tmp_path):
+    client = FakeMCP()
+    summarizer = CountingSummarizer()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+        summarizer=summarizer,
+    )
+
+    first = await service.collect_and_publish(date(2026, 10, 3))
+    second = await service.collect_and_publish(date(2026, 10, 3))
+
+    assert summarizer.calls == 1
+    assert second.notion_result == {"status": "unchanged", "llm_called": False}
+    assert "No Slack changes detected" in second.content
+    assert first.version == second.version

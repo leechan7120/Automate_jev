@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+import hashlib
 import json
 import re
 from typing import Any, Mapping
@@ -50,6 +51,18 @@ class DailyProgressService:
         query: str = "",
     ) -> DailyProgress:
         messages = await self.slack.search_messages(day, query)
+        snapshot_path = self.memory.root / "slack-snapshots" / f"{day.isoformat()}.json"
+        fingerprint = _message_fingerprint(messages)
+        previous_snapshot = _read_marker(snapshot_path)
+        if previous_snapshot.get("fingerprint") == fingerprint:
+            return _unchanged_progress(day, messages, int(previous_snapshot.get("version", 0)))
+        if not messages:
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text(
+                json.dumps({"date": day.isoformat(), "fingerprint": fingerprint, "version": 0}),
+                encoding="utf-8",
+            )
+            return _unchanged_progress(day, messages, 0)
         root = None
         if self.publish_enabled and self.project_root_page_id:
             root = await self.notion.fetch(self.project_root_page_id)
@@ -152,6 +165,11 @@ class DailyProgressService:
                 project_results = await self._publish_projects(day, version, summary.projects)
                 if project_results:
                     notion_result = {**notion_result, "projects": project_results}
+        snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(
+            json.dumps({"date": day.isoformat(), "fingerprint": fingerprint, "version": version}),
+            encoding="utf-8",
+        )
         return DailyProgress(day, messages, content, record, version, notion_result)
 
     async def _publish_projects(
@@ -258,6 +276,49 @@ def _summary_from_messages(messages: tuple[SlackMessage, ...]) -> ProgressSummar
         progress=tuple(message.text for message in sections["Progress"]),
         discussions=tuple(message.text for message in sections["Discussions"]),
         decisions=tuple(message.text for message in sections["Decisions"]),
+    )
+
+
+def _message_fingerprint(messages: tuple[SlackMessage, ...]) -> str:
+    payload = [
+        {
+            "id": message.message_id,
+            "channel": message.channel,
+            "author": message.author,
+            "text": message.text,
+            "timestamp": message.timestamp,
+        }
+        for message in messages
+    ]
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _unchanged_progress(
+    day: date,
+    messages: tuple[SlackMessage, ...],
+    version: int,
+) -> DailyProgress:
+    content = (
+        f"# Daily Progress - {day.isoformat()}\n\n"
+        f"- Document version: v{version}\n"
+        "- No Slack changes detected; LLM and Notion publication were skipped."
+    )
+    record = MemoryRecord(
+        kind=MemoryKind.EPISODIC,
+        scope=f"slack-daily-{day.isoformat()}",
+        text=content,
+        source=("slack", day.isoformat()),
+        confidence=1.0,
+        created_at=datetime.now(timezone.utc),
+    )
+    return DailyProgress(
+        day,
+        messages,
+        content,
+        record,
+        version,
+        {"status": "unchanged", "llm_called": False},
     )
 
 
