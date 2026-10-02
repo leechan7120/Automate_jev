@@ -105,9 +105,12 @@ GHCR_READ_TOKEN   GHCR private image pull 권한 token
 JEV_API_KEY       Jev provider key
 AUTOMATE_JEV_MCP_COMMAND  MCP stdio command (예: npx -y mcp-remote https://mcp.notion.com/mcp)
 AUTOMATE_JEV_SLACK_MCP_COMMAND  Slack token bridge (기본: `python -m automate_jev.slack_mcp_bridge`)
+AUTOMATE_JEV_CALENDAR_MCP_COMMAND Calendar MCP stdio command (기본: `python -m automate_jev.google_calendar_mcp_bridge`)
 SLACK_OAUTH_TOKEN                Slack User OAuth token (`xoxp-...`)
 AUTOMATE_JEV_SLACK_SERVER       Slack MCP server name (기본 slack)
 AUTOMATE_JEV_SLACK_SEARCH_TOOL  Slack 검색 tool 이름 (기본 slack-search-messages)
+AUTOMATE_JEV_CALENDAR_SERVER    Calendar MCP server name (기본 calendar)
+AUTOMATE_JEV_CALENDAR_CREATE_TOOL Calendar 일정 생성 tool 이름 (기본 calendar-create-event)
 AUTOMATE_JEV_SLACK_QUERY        날짜 필터를 대체할 Slack 검색어 (보통 비워둠)
 AUTOMATE_JEV_TIMEZONE           일일 집계 timezone (예: Asia/Seoul)
 AUTOMATE_JEV_LLM_ENABLED        Gemini Slack 요약 활성화 (Notion 발행 시 true 필요)
@@ -117,6 +120,37 @@ NOTION_ROUTINE_PARENT_ID   Notion의 Automate Jev/Routines 부모 페이지 ID
 NOTION_DAILY_PROGRESS_PARENT_ID  Notion의 Automate Jev/Daily Progress 부모 페이지 ID
 NOTION_PROJECT_ROOT_PAGE_ID     자동 갱신할 프로젝트 root 문서의 페이지 ID
 NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적으로 true 필요)
+```
+
+Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간만 있고 종료 시간이 확정되지 않은 timed event도 생성하지 않으며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
+
+Google Calendar 설정:
+
+1. Google Cloud Console에서 Calendar API를 활성화하고 OAuth Desktop credentials JSON을 내려받아 `google-calendar-credentials.json`으로 저장합니다.
+2. 로컬에서 다음 명령을 실행해 브라우저 OAuth를 완료합니다.
+
+```powershell
+$env:GOOGLE_CALENDAR_CREDENTIALS_FILE=".\google-calendar-credentials.json"
+$env:GOOGLE_CALENDAR_TOKEN_FILE=".\.automate-jev\google-calendar-token.json"
+automate-jev-google-calendar-auth
+```
+
+3. 배포 환경에서는 JSON 원문을 GitHub Secrets에 넣지 않고 base64로 변환해 다음 Secrets로 저장합니다.
+
+```text
+GOOGLE_CALENDAR_CREDENTIALS_B64
+GOOGLE_CALENDAR_TOKEN_B64
+GOOGLE_CALENDAR_ID=primary
+```
+
+4. CD가 두 base64 Secret을 EC2의 `/opt/automate-jev/data/google-calendar-credentials.json`과 `/opt/automate-jev/data/google-calendar-token.json`으로 복원합니다. 두 파일은 컨테이너의 `/app/.automate-jev`에 마운트됩니다.
+5. `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`는 `python -m automate_jev.google_calendar_mcp_bridge`로 설정합니다.
+
+Base64 값은 PowerShell에서 다음처럼 만들 수 있습니다.
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\google-calendar-credentials.json"))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes(".\.automate-jev\google-calendar-token.json"))
 ```
 
 EC2에는 Docker Engine, Docker Compose plugin, Nginx가 설치되어 있어야 하며, `DEPLOY_USER`가 Docker를 sudo 없이 실행할 수 있어야 합니다. Nginx 설정은 기본적으로 `server_name _`과 HTTP 80을 사용하므로 실제 도메인과 HTTPS는 EC2의 Certbot 또는 기존 TLS 설정에 맞춰 변경해야 합니다.

@@ -11,3 +11,5 @@ windows-host/bin/
 .env
 .env.*
 !.env.example
+google-calendar-credentials.json
+google-calendar-token.json

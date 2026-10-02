@@ -13,6 +13,8 @@ authors = [{ name = "Automate Jev contributors" }]
 dependencies = [
   "fastapi>=0.115",
   "google-genai>=1.0",
+  "google-api-python-client>=2.150.0",
+  "google-auth-oauthlib>=1.2.1",
   "jsonschema>=4.23",
   "typesafe-sdk>=0.6.0",
   "uvicorn>=0.34",
@@ -29,6 +31,9 @@ automate-jev-integrated-demo = "automate_jev.integrated_demo:main"
 automate-jev-api = "automate_jev.api:main"
 automate-jev-notion-sync = "automate_jev.notion_sync:main"
 automate-jev-daily-progress = "automate_jev.daily_progress_sync:main"
+automate-jev-calendar = "automate_jev.calendar_router:main"
+automate-jev-google-calendar-mcp = "automate_jev.google_calendar_mcp_bridge:main"
+automate-jev-google-calendar-auth = "automate_jev.google_calendar_auth:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/automate_jev"]

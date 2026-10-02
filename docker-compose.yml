@@ -24,3 +24,13 @@ services:
       - ./data:/app/.automate-jev
       - ./mcp-auth:/root/.mcp-auth
     command: ["sh", "-c", "while true; do if automate-jev-daily-progress; then sleep 600; else echo 'daily progress sync failed; retrying in 5 minutes' >&2; sleep 300; fi; done"]
+
+  automate-jev-calendar:
+    image: ghcr.io/${GH_OWNER}/automate-jev-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/.automate-jev
+      - ./mcp-auth:/root/.mcp-auth
+    command: ["sh", "-c", "while true; do if automate-jev-calendar; then sleep 600; else echo 'calendar sync failed; retrying in 5 minutes' >&2; sleep 300; fi; done"]
