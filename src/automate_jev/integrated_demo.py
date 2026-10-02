@@ -54,6 +54,7 @@ async def run_integrated_demo(
     provider_mode: str,
     env_path: Path,
     hold_seconds: float = 0,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     if not host_path.is_file() or not target_path.is_file():
         raise ContractError("compiled host or smoke target is missing; build the Windows Host first")
@@ -62,7 +63,7 @@ async def run_integrated_demo(
     if not 0 <= hold_seconds <= 10:
         raise ContractError("hold_seconds must be between 0 and 10")
 
-    session_id = f"integrated-{uuid4().hex}"
+    session_id = session_id or f"integrated-{uuid4().hex}"
     action = synthetic_fill_action()
     registry = ActionRegistry(session_id)
     registry.replace([action])
