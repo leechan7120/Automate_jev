@@ -113,13 +113,18 @@ class DailyProgressService:
             marker_data = _read_marker(marker)
             page_id = str(marker_data.get("page_id", "")).strip()
             if page_id:
-                notion_result = await self.notion.update_page(
-                    page_id=page_id,
-                    title=f"Daily Progress - {day.isoformat()}",
-                    content=notion_content,
-                )
-                notion_result = {"status": "updated", "version": version, **notion_result}
-            elif marker.exists():
+                try:
+                    notion_result = await self.notion.update_page(
+                        page_id=page_id,
+                        title=f"Daily Progress - {day.isoformat()}",
+                        content=notion_content,
+                    )
+                    notion_result = {"status": "updated", "version": version, **notion_result}
+                except ContractError as error:
+                    if not _is_missing_notion_page(error):
+                        raise
+                    page_id = ""
+            if not page_id and marker.exists():
                 title = f"Daily Progress - {day.isoformat()}"
                 matches = await self.notion.search(title)
                 existing = next((page for page in matches if page.title == title), None)
@@ -241,15 +246,21 @@ class DailyProgressService:
             marker_data = _read_marker(marker)
             page_id = str(marker_data.get("page_id", "")).strip()
             if page_id:
-                existing = await self.notion.fetch(page_id)
-                content = _append_project_update(existing.text, day, version, project)
-                result = await self.notion.update_page(
-                    page_id=page_id,
-                    title=f"Project - {project.name}",
-                    content=content,
-                )
-                results.append({"name": project.name, "status": "updated", **result})
-            else:
+                try:
+                    existing = await self.notion.fetch(page_id)
+                    content = _append_project_update(existing.text, day, version, project)
+                    result = await self.notion.update_page(
+                        page_id=page_id,
+                        title=f"Project - {project.name}",
+                        content=content,
+                    )
+                    results.append({"name": project.name, "status": "updated", **result})
+                    continue
+                except ContractError as error:
+                    if not _is_missing_notion_page(error):
+                        raise
+                    page_id = ""
+            if not page_id:
                 content = _project_content(day, version, project)
                 result = await self.notion.publish_routine(
                     title=f"Project - {project.name}",
@@ -548,6 +559,11 @@ def _page_id(result: Mapping[str, Any]) -> str:
                 if nested:
                     return nested
     return ""
+
+
+def _is_missing_notion_page(error: ContractError) -> bool:
+    message = str(error).lower()
+    return any(marker in message for marker in ("trash", "not found", "does not exist", "deleted"))
 
 
 def _update_root(existing: str, day: date, summary: ProgressSummary) -> str:
