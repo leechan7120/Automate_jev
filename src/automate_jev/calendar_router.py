@@ -233,6 +233,7 @@ class SlackCalendarRouter:
     calendar_server: str = "calendar"
     create_tool: str = "calendar-create-event"
     get_tool: str = "calendar-get-event"
+    find_tool: str = "calendar-find-event"
     timezone_name: str = "UTC"
 
     async def route(self, day: date, *, query: str = "") -> Mapping[str, Any]:
@@ -261,6 +262,28 @@ class SlackCalendarRouter:
                         continue
                     marker.unlink()
                 else:
+                    skipped.append(event.summary)
+                    continue
+            else:
+                existing = await self.calendar.call_tool(
+                    server=self.calendar_server,
+                    tool=self.find_tool,
+                    arguments={
+                        "summary": event.summary,
+                        "start_date": event.start_date,
+                        "start_time": event.start_time,
+                        "end_date": event.end_date,
+                        "end_time": event.end_time,
+                        "timezone": event.timezone,
+                        "all_day": event.all_day,
+                    },
+                )
+                if _event_exists(existing):
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(
+                        json.dumps({"summary": event.summary, "result": dict(existing)}),
+                        encoding="utf-8",
+                    )
                     skipped.append(event.summary)
                     continue
             result = await self.calendar.call_tool(
@@ -294,12 +317,11 @@ class SlackCalendarRouter:
 
 def _event_key(event: CalendarEvent) -> str:
     payload = {
-        "summary": event.summary,
+        "summary": " ".join(event.summary.split()).casefold(),
         "start_date": event.start_date,
         "start_time": event.start_time,
         "end_date": event.end_date,
         "end_time": event.end_time,
-        "evidence_ids": event.evidence_ids,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 

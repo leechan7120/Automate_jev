@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from automate_jev.calendar_router import CalendarDecision, CalendarEvent, SlackCalendarRouter, _parse_decision
+from automate_jev.calendar_router import CalendarDecision, CalendarEvent, SlackCalendarRouter, _event_key, _parse_decision
 from automate_jev.memory import LocalMemoryStore
 from automate_jev.slack import SlackMCP, SlackMessage
 
@@ -11,6 +11,7 @@ from automate_jev.slack import SlackMCP, SlackMessage
 class FakeMCP:
     def __init__(self):
         self.calls = []
+        self.find_existing = False
 
     async def call_tool(self, *, server, tool, arguments):
         self.calls.append((server, tool, dict(arguments)))
@@ -23,6 +24,8 @@ class FakeMCP:
             }]}
         if tool == "calendar-get-event":
             return {"structuredContent": {"found": True}}
+        if tool == "calendar-find-event":
+            return {"structuredContent": {"found": self.find_existing}}
         return {"created": True, "id": "event-1"}
 
 
@@ -68,6 +71,45 @@ def test_parse_decision_defaults_one_hour_when_confirmed_start_has_no_end():
     assert decision.events[0].end_time == "15:00"
 
 
+def test_event_key_deduplicates_same_date_even_when_evidence_changes():
+    first = CalendarEvent(
+        summary="오프라인 회의",
+        start_date="2026-10-07",
+        start_time="14:00",
+        end_date="2026-10-07",
+        end_time="15:00",
+        timezone="Asia/Seoul",
+        all_day=False,
+        description="첫 번째 확정 메시지",
+        evidence_ids=("m-1",),
+    )
+    second = CalendarEvent(
+        summary=" 오프라인   회의 ",
+        start_date="2026-10-07",
+        start_time="14:00",
+        end_date="2026-10-07",
+        end_time="15:00",
+        timezone="Asia/Seoul",
+        all_day=False,
+        description="후속 확정 메시지",
+        evidence_ids=("m-2",),
+    )
+    different_date = CalendarEvent(
+        summary="오프라인 회의",
+        start_date="2026-10-08",
+        start_time="14:00",
+        end_date="2026-10-08",
+        end_time="15:00",
+        timezone="Asia/Seoul",
+        all_day=False,
+        description="다른 날짜의 확정 메시지",
+        evidence_ids=("m-3",),
+    )
+
+    assert _event_key(first) == _event_key(second)
+    assert _event_key(first) != _event_key(different_date)
+
+
 @pytest.mark.asyncio
 async def test_router_creates_confirmed_event_once(tmp_path):
     client = FakeMCP()
@@ -96,7 +138,7 @@ async def test_router_creates_confirmed_event_once(tmp_path):
     first = await router.route(date(2026, 10, 3))
     second = await router.route(date(2026, 10, 3))
 
-    calendar_calls = [call for call in client.calls if call[0] == "calendar"]
+    calendar_calls = [call for call in client.calls if call[0] == "calendar" and call[1] == "calendar-create-event"]
     assert len(calendar_calls) == 1
     assert first["created"][0]["summary"] == "배포 회의"
     assert second["skipped_duplicates"] == ["배포 회의"]
@@ -140,3 +182,32 @@ async def test_router_recreates_event_when_remote_event_was_deleted(tmp_path):
     result = await router.route(date(2026, 10, 3))
 
     assert result["created"][0]["summary"] == "배포 회의"
+
+
+@pytest.mark.asyncio
+async def test_router_skips_remote_existing_event_without_marker(tmp_path):
+    client = FakeMCP()
+    client.find_existing = True
+    event = CalendarEvent(
+        summary="배포 회의",
+        start_date="2026-10-07",
+        start_time="14:00",
+        end_date="2026-10-07",
+        end_time="15:00",
+        timezone="Asia/Seoul",
+        all_day=False,
+        description="확정된 Slack 대화",
+        evidence_ids=("m-1",),
+    )
+    router = SlackCalendarRouter(
+        slack=SlackMCP(client),
+        calendar=client,
+        decision_provider=StaticDecisionProvider((event,)),
+        memory_root=tmp_path,
+    )
+
+    result = await router.route(date(2026, 10, 3))
+
+    create_calls = [call for call in client.calls if call[1] == "calendar-create-event"]
+    assert create_calls == []
+    assert result["skipped_duplicates"] == ["배포 회의"]

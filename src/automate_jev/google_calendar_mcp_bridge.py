@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 TOOL_NAMES = {"calendar-create-event", "calendar_create_event"}
 GET_TOOL_NAMES = {"calendar-get-event", "calendar_get_event"}
+FIND_TOOL_NAMES = {"calendar-find-event", "calendar_find_event"}
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 
@@ -68,6 +69,23 @@ def _handle(request: Mapping[str, Any]) -> dict[str, Any] | None:
                     "required": ["event_id"],
                     "additionalProperties": False,
                 },
+            }, {
+                "name": "calendar-find-event",
+                "description": "Find an existing matching event in Google Calendar.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string", "minLength": 1},
+                        "start_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+                        "start_time": {"type": "string"},
+                        "end_date": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+                        "end_time": {"type": "string"},
+                        "timezone": {"type": "string"},
+                        "all_day": {"type": "boolean"},
+                    },
+                    "required": ["summary", "start_date", "end_date", "timezone", "all_day"],
+                    "additionalProperties": False,
+                },
                     }],
         })
     if method != "tools/call":
@@ -76,13 +94,18 @@ def _handle(request: Mapping[str, Any]) -> dict[str, Any] | None:
     if not isinstance(params, Mapping):
         return _error(request_id, -32602, "MCP tool parameters are required")
     tool_name = str(params.get("name", ""))
-    if tool_name not in TOOL_NAMES | GET_TOOL_NAMES:
+    if tool_name not in TOOL_NAMES | GET_TOOL_NAMES | FIND_TOOL_NAMES:
         return _error(request_id, -32601, f"Unknown tool: {params.get('name', '')}")
     arguments = params.get("arguments", {})
     if not isinstance(arguments, Mapping):
         return _error(request_id, -32602, "Tool arguments must be an object")
     try:
-        payload = _get_event(arguments) if tool_name in GET_TOOL_NAMES else {"event": _create_event(arguments)}
+        if tool_name in GET_TOOL_NAMES:
+            payload = _get_event(arguments)
+        elif tool_name in FIND_TOOL_NAMES:
+            payload = _find_event(arguments)
+        else:
+            payload = {"event": _create_event(arguments)}
     except (RuntimeError, ValueError) as error:
         return _result(request_id, {"isError": True, "content": [{"type": "text", "text": str(error)}]})
     return _result(request_id, {
@@ -159,6 +182,60 @@ def _get_event(arguments: Mapping[str, Any]) -> dict[str, Any]:
             return {"found": False, "event_id": event_id}
         raise RuntimeError(f"Google Calendar event lookup failed: {event_id}") from error
     return {"found": True, "event_id": event_id, "event": event}
+
+
+def _find_event(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    summary = str(arguments.get("summary", "")).strip()
+    start_date = str(arguments.get("start_date", "")).strip()
+    end_date = str(arguments.get("end_date", start_date)).strip()
+    timezone_name = str(arguments.get("timezone", "UTC")).strip() or "UTC"
+    all_day = bool(arguments.get("all_day", False))
+    if not summary or not _valid_calendar_date(start_date) or not _valid_calendar_date(end_date):
+        raise ValueError("summary, start_date, and end_date are required")
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo(timezone_name)
+    except (KeyError, ValueError) as error:
+        raise ValueError(f"invalid timezone: {timezone_name}") from error
+    if all_day:
+        start = datetime.combine(date.fromisoformat(start_date), datetime.min.time(), zone)
+        end = datetime.combine(date.fromisoformat(end_date) + timedelta(days=1), datetime.min.time(), zone)
+    else:
+        start_time = str(arguments.get("start_time", "")).strip()
+        end_time = str(arguments.get("end_time", "")).strip()
+        if not start_time or not end_time:
+            raise ValueError("timed event lookup requires start_time and end_time")
+        start = datetime.fromisoformat(f"{start_date}T{start_time}").replace(tzinfo=zone)
+        end = datetime.fromisoformat(f"{end_date}T{end_time}").replace(tzinfo=zone)
+    service = _calendar_service()
+    events = service.events().list(
+        calendarId=os.environ.get("GOOGLE_CALENDAR_ID", "primary"),
+        timeMin=start.isoformat(),
+        timeMax=end.isoformat(),
+        q=summary,
+        singleEvents=True,
+        maxResults=50,
+    ).execute().get("items", [])
+    normalized_summary = " ".join(summary.split()).casefold()
+    for event in events:
+        if " ".join(str(event.get("summary", "")).split()).casefold() != normalized_summary:
+            continue
+        event_start = event.get("start", {})
+        event_end = event.get("end", {})
+        candidate_start = event_start.get("date") if all_day else event_start.get("dateTime", "")
+        candidate_end = event_end.get("date") if all_day else event_end.get("dateTime", "")
+        if not candidate_start or not candidate_end:
+            continue
+        return {"found": True, "event_id": str(event.get("id", "")), "event": event}
+    return {"found": False}
+
+
+def _valid_calendar_date(value: str) -> bool:
+    try:
+        date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
 
 
 def _calendar_service() -> Any:
