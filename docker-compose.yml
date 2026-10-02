@@ -23,7 +23,7 @@ services:
     volumes:
       - ./data:/app/.automate-jev
       - ./mcp-auth:/root/.mcp-auth
-    command: ["sh", "-c", "while true; do if automate-jev-daily-progress; then sleep 600; else echo 'daily progress sync failed; retrying in 5 minutes' >&2; sleep 300; fi; done"]
+    command: ["sh", "-c", "automate-jev-seed-daily-progress --memory-root /app/.automate-jev/memory >/dev/null 2>&1 || true; while true; do if automate-jev-daily-progress; then sleep 600; else echo 'daily progress sync failed; retrying in 5 minutes' >&2; sleep 300; fi; done"]
 
   automate-jev-calendar:
     image: ghcr.io/${GH_OWNER}/automate-jev-backend:${IMAGE_TAG:-latest}

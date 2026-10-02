@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from automate_jev.daily_progress import DailyProgressService
+from automate_jev.daily_progress import DailyProgressService, seed_daily_progress_records
 from automate_jev.memory import LocalMemoryStore
 from automate_jev.models import ContractError
 from automate_jev.notion import NotionMCP
@@ -105,7 +105,8 @@ async def test_daily_progress_does_not_create_duplicate_page_after_restart(tmp_p
     await service.collect_and_publish(date(2026, 10, 3))
     await service.collect_and_publish(date(2026, 10, 3))
 
-    assert [tool for _, tool, _ in client.calls].count("notion-create-pages") == 1
+    # The first run creates today's page; the next run may create tomorrow's agenda.
+    assert [tool for _, tool, _ in client.calls].count("notion-create-pages") == 2
     assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 0
 
 
@@ -171,9 +172,10 @@ async def test_daily_progress_creates_project_page_from_slack_summary(tmp_path):
     progress = await service.collect_and_publish(date(2026, 10, 3))
 
     creates = [arguments for server, tool, arguments in client.calls if tool == "notion-create-pages"]
-    assert len(creates) == 2
+    assert len(creates) == 3
     assert creates[1]["parent"] == {"page_id": "root-page"}
     assert "Deploy worker" in creates[1]["pages"][0]["content"]
+    assert creates[2]["pages"][0]["properties"]["title"] == "Daily Progress - 2026-10-04"
     assert progress.notion_result["projects"][0]["name"] == "Automate Jev"
 
 
@@ -236,3 +238,33 @@ async def test_daily_progress_skips_llm_when_slack_is_unchanged(tmp_path):
     assert second.notion_result == {"status": "unchanged", "llm_called": False}
     assert "No Slack changes detected" in second.content
     assert first.version == second.version
+
+
+@pytest.mark.asyncio
+async def test_next_day_agenda_is_created_from_history_and_replaced_by_daily_progress(tmp_path):
+    client = FakeMCP()
+    memory = LocalMemoryStore(tmp_path)
+    seed_daily_progress_records(
+        memory,
+        day="2026-10-02",
+        content="# Daily Progress - 2026-10-02\n\n## Discussions\n- Review the deployment issue\n\n## Decisions\n- Fix the retry policy\n",
+    )
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=memory,
+        notion_parent_id="daily-progress-page",
+        publish_enabled=True,
+        summarizer=StaticSummarizer(),
+    )
+
+    draft = await service.prepare_next_day(date(2026, 10, 3))
+    draft_create = next(arguments for _, tool, arguments in client.calls if tool == "notion-create-pages")
+    assert draft["status"] == "created"
+    assert "pre-meeting agenda draft" in draft_create["pages"][0]["content"]
+    assert "Fix the retry policy" in draft_create["pages"][0]["content"]
+
+    await service.collect_and_publish(date(2026, 10, 4))
+
+    updates = [arguments for _, tool, arguments in client.calls if tool == "notion-update-page"]
+    assert any("pre-meeting agenda draft" not in arguments["new_str"] for arguments in updates)

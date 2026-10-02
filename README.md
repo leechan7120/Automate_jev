@@ -124,6 +124,14 @@ NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적
 
 Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. 첫 이벤트를 생성한 뒤에도 worker는 종료되지 않고, 성공하면 10분(`600초`)마다, 실패하면 5분(`300초`) 후 다시 실행됩니다. 따라서 매 실행마다 현재 날짜의 Slack 데이터를 새로 검색하고, 기존 일정은 중복 생성하지 않으면서 새로 확정된 일정은 계속 Calendar에 추가합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간이 확정됐지만 종료 시간이 없는 timed event는 1시간 일정으로 생성하며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
 
+Daily Progress worker는 시작할 때 고정된 과거 3일의 데모 기록을 memory에 seed합니다. 같은 기록이 이미 있으면 변경하지 않으므로 worker 재시작으로 내용이 누적되거나 바뀌지 않습니다. 로컬에서 같은 seed를 준비하려면 다음 명령을 실행합니다.
+
+```powershell
+automate-jev-seed-daily-progress --memory-root .\.automate-jev\memory
+```
+
+각 worker 실행은 과거 Daily Progress를 모아 다음 날의 `pre-meeting agenda draft` 페이지를 생성하거나 갱신합니다. 초안에는 이전 기록에서 발견된 문제와 수정할 점, 논의 안건, 후속 작업이 포함됩니다. 해당 날짜가 되면 Slack 기반 실제 Daily Progress가 같은 Notion 페이지를 덮어쓰고, 다음 날 초안이 새로 만들어집니다.
+
 Google Calendar 설정:
 
 1. Google Cloud Console에서 Calendar API를 활성화하고 OAuth Desktop credentials JSON을 내려받아 `google-calendar-credentials.json`으로 저장합니다.

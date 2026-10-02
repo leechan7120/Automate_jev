@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import re
@@ -55,6 +55,8 @@ class DailyProgressService:
         fingerprint = _message_fingerprint(messages)
         previous_snapshot = _read_marker(snapshot_path)
         if previous_snapshot.get("fingerprint") == fingerprint:
+            if self.publish_enabled:
+                await self.prepare_next_day(day)
             return _unchanged_progress(day, messages, int(previous_snapshot.get("version", 0)))
         if not messages:
             snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -62,6 +64,8 @@ class DailyProgressService:
                 json.dumps({"date": day.isoformat(), "fingerprint": fingerprint, "version": 0}),
                 encoding="utf-8",
             )
+            if self.publish_enabled:
+                await self.prepare_next_day(day)
             return _unchanged_progress(day, messages, 0)
         root = None
         if self.publish_enabled and self.project_root_page_id:
@@ -170,7 +174,58 @@ class DailyProgressService:
             json.dumps({"date": day.isoformat(), "fingerprint": fingerprint, "version": version}),
             encoding="utf-8",
         )
+        if self.publish_enabled:
+            await self.prepare_next_day(day)
         return DailyProgress(day, messages, content, record, version, notion_result)
+
+    async def prepare_next_day(self, day: date) -> Mapping[str, Any] | None:
+        """Create or refresh tomorrow's agenda from all prior Daily Progress records."""
+        history = _daily_progress_history(self.memory.root, through=day)
+        if not history or not self.publish_enabled:
+            return None
+        target_day = day + timedelta(days=1)
+        source_fingerprint = hashlib.sha256(
+            json.dumps(history, ensure_ascii=True, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        marker = self.memory.root / "daily-progress-published" / f"{target_day.isoformat()}.json"
+        marker_data = _read_marker(marker)
+        if (
+            marker_data.get("kind") == "next-day-agenda"
+            and marker_data.get("source_fingerprint") == source_fingerprint
+        ):
+            return {"status": "unchanged", "date": target_day.isoformat()}
+        content = _format_next_day_agenda(target_day, history)
+        page_id = str(marker_data.get("page_id", "")).strip()
+        title = f"Daily Progress - {target_day.isoformat()}"
+        if page_id:
+            result = await self.notion.update_page(page_id=page_id, title=title, content=content)
+            status = "updated"
+        else:
+            matches = await self.notion.search(title) if marker.exists() else ()
+            existing = next((page for page in matches if page.title == title), None)
+            if existing is not None:
+                page_id = existing.page_id
+                result = await self.notion.update_page(page_id=page_id, title=title, content=content)
+                status = "repaired"
+            else:
+                result = await self.notion.publish_routine(
+                    title=title,
+                    content=content,
+                    parent_id=self.notion_parent_id,
+                )
+                page_id = _page_id(result)
+                status = "created"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps({
+                "date": target_day.isoformat(),
+                "kind": "next-day-agenda",
+                "page_id": page_id,
+                "source_fingerprint": source_fingerprint,
+            }),
+            encoding="utf-8",
+        )
+        return {"status": status, "date": target_day.isoformat(), **result}
 
     async def _publish_projects(
         self,
@@ -254,6 +309,97 @@ def _format_progress(
         lines.extend(("", "## Evidence", *evidence))
     lines.extend(("", "## Source", "- Slack MCP search", "- Gemini summary when enabled"))
     return "\n".join(lines)[:4_000]
+
+
+def seed_daily_progress_records(
+    store: LocalMemoryStore,
+    *,
+    day: str,
+    content: str,
+    created_at: datetime | None = None,
+) -> int:
+    store.upsert(MemoryRecord(
+        kind=MemoryKind.EPISODIC,
+        scope=f"slack-daily-{day}",
+        text=content,
+        source=("seed", day),
+        confidence=1.0,
+        created_at=created_at or datetime.now(timezone.utc),
+    ))
+    return 1
+
+
+def _daily_progress_history(root: Any, *, through: date) -> list[dict[str, str]]:
+    history: list[dict[str, str]] = []
+    for path in sorted((root / "episodic").glob("slack-daily-*.md")):
+        match = re.search(r"slack-daily-(\d{4}-\d{2}-\d{2})", path.name)
+        if not match:
+            continue
+        try:
+            day = date.fromisoformat(match.group(1))
+        except ValueError:
+            continue
+        if day > through:
+            continue
+        history.append({"date": day.isoformat(), "content": path.read_text(encoding="utf-8")[-4_000:]})
+    return history[-14:]
+
+
+def _format_next_day_agenda(day: date, history: list[dict[str, str]]) -> str:
+    discussions: list[str] = []
+    corrections: list[str] = []
+    actions: list[str] = []
+    source_days: list[str] = []
+    for item in history:
+        source_days.append(item["date"])
+        content = item["content"]
+        discussions.extend(_section_bullets(content, "Discussions"))
+        corrections.extend(_section_bullets(content, "Decisions"))
+        actions.extend(_section_bullets(content, "Next actions"))
+    lines = [
+        f"# Daily Progress - {day.isoformat()}",
+        "",
+        "- Status: pre-meeting agenda draft",
+        f"- Based on Daily Progress: {', '.join(source_days)}",
+        "",
+        "## Problems and corrections to review",
+    ]
+    correction_items = _unique(corrections)
+    lines.extend(f"- {item}" for item in correction_items)
+    if not correction_items:
+        lines.append("- None identified.")
+    lines.extend(("", "## Discussion agenda"))
+    discussion_items = _unique(discussions)
+    lines.extend(f"- {item}" for item in discussion_items)
+    if not discussion_items:
+        lines.append("- None identified.")
+    lines.extend(("", "## Follow-up actions"))
+    action_items = _unique(actions)
+    lines.extend(f"- {item}" for item in action_items)
+    if not action_items:
+        lines.append("- None identified.")
+    lines.extend(("", "## Source", "- Previous Daily Progress records"))
+    return "\n".join(lines)[:4_000]
+
+
+def _section_bullets(content: str, title: str) -> list[str]:
+    match = re.search(rf"^## {re.escape(title)}\s*$([\s\S]*?)(?=^## |\Z)", content, re.MULTILINE)
+    if not match:
+        match = re.search(rf"^### {re.escape(title)}\s*$([\s\S]*?)(?=^### |^## |\Z)", content, re.MULTILINE)
+    if not match:
+        return []
+    return [line[2:].strip() for line in match.group(1).splitlines() if line.startswith("- ") and line[2:].strip() != "None identified."]
+
+
+def _unique(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        normalized = " ".join(item.split()).casefold()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(item)
+    return result[:12]
 
 
 def _classify(messages: tuple[SlackMessage, ...]) -> dict[str, tuple[SlackMessage, ...]]:
