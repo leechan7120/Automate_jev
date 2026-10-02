@@ -102,7 +102,14 @@ class NotionMCP:
             },
         )
 
-    async def update_page(self, *, page_id: str, title: str, content: str) -> Mapping[str, Any]:
+    async def update_page(
+        self,
+        *,
+        page_id: str,
+        title: str,
+        content: str,
+        allow_deleting_content: bool = False,
+    ) -> Mapping[str, Any]:
         if not page_id.strip() or not title.strip() or not content.strip():
             raise ContractError("Notion page update requires page_id, title, and content")
         return await self.client.call_tool(
@@ -113,6 +120,7 @@ class NotionMCP:
                 "page_id": page_id,
                 "command": "replace_content",
                 "new_str": content[:4_000],
+                "allow_deleting_content": allow_deleting_content,
             },
         )
 

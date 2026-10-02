@@ -164,6 +164,7 @@ class DailyProgressService:
                     page_id=self.project_root_page_id,
                     title=root.title,
                     content=root_content,
+                    allow_deleting_content=True,
                 )
                 notion_result = {**notion_result, "root": root_result}
                 project_results = await self._publish_projects(day, version, summary.projects)

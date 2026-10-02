@@ -80,6 +80,7 @@ async def test_notion_page_update_replaces_content():
             "page_id": "page-1",
             "command": "replace_content",
             "new_str": "# Updated project overview",
+            "allow_deleting_content": False,
         },
     )
 
