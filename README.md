@@ -104,7 +104,8 @@ GHCR_USERNAME     GHCR 로그인 사용자명
 GHCR_READ_TOKEN   GHCR private image pull 권한 token
 JEV_API_KEY       Jev provider key
 AUTOMATE_JEV_MCP_COMMAND  MCP stdio command (예: npx -y mcp-remote https://mcp.notion.com/mcp)
-AUTOMATE_JEV_SLACK_MCP_COMMAND  Slack MCP stdio command
+AUTOMATE_JEV_SLACK_MCP_COMMAND  Slack token bridge (기본: `python -m automate_jev.slack_mcp_bridge`)
+SLACK_OAUTH_TOKEN                Slack User OAuth token (`xoxp-...`)
 AUTOMATE_JEV_SLACK_SERVER       Slack MCP server name (기본 slack)
 AUTOMATE_JEV_SLACK_SEARCH_TOOL  Slack 검색 tool 이름 (기본 slack-search-messages)
 AUTOMATE_JEV_SLACK_QUERY        날짜 필터를 대체할 Slack 검색어 (보통 비워둠)
