@@ -49,6 +49,22 @@ def test_parse_decision_requires_confirmed_date_and_evidence():
     assert decision.events[0].summary == "배포 회의"
 
 
+def test_parse_decision_defaults_one_hour_when_confirmed_start_has_no_end():
+    messages = (SlackMessage("m-1", "eng", "chanh", "10월 7일 오후 2시 회의로 확정"),)
+
+    decision = _parse_decision(
+        '{"events":[{"confirmed":true,"summary":"배포 회의",'
+        '"start_date":"2026-10-07","start_time":"14:00",'
+        '"evidence_ids":["m-1"]}]}',
+        messages,
+        "Asia/Seoul",
+    )
+
+    assert len(decision.events) == 1
+    assert decision.events[0].end_date == "2026-10-07"
+    assert decision.events[0].end_time == "15:00"
+
+
 @pytest.mark.asyncio
 async def test_router_creates_confirmed_event_once(tmp_path):
     client = FakeMCP()

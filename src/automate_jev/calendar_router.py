@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 import os
@@ -95,7 +95,8 @@ Create an event only when ALL conditions are true:
 2. The conversation clearly decides what must happen, such as a meeting, appointment, review,
    delivery, presentation, or other concrete task.
 3. The event has enough information for a calendar entry. A confirmed date without a confirmed
-   time is allowed only as an all-day event. Do not invent missing times.
+    time is allowed only as an all-day event. If a start time is confirmed but no end time is
+    stated, leave end_time empty; the application will use a one-hour default duration.
 
 Treat phrases equivalent to 'maybe', 'how about', 'we should', 'can we', '予定', '検討',
 '아마', '어떨까요', '논의 필요', or '미정' as NOT confirmed unless a later message clearly
@@ -183,8 +184,13 @@ def _parse_decision(
         if all_day:
             start_time = ""
             end_time = ""
-        elif not _valid_time(end_time) or not end_time:
-            rejection_reasons.append("missing_end_time")
+        elif not end_time:
+            start = datetime.fromisoformat(f"{start_date}T{start_time}")
+            default_end = start + timedelta(hours=1)
+            end_date = default_end.date().isoformat()
+            end_time = default_end.strftime("%H:%M")
+        elif not _valid_time(end_time):
+            rejection_reasons.append("invalid_end_time")
             continue
         events.append(CalendarEvent(
             summary=summary,

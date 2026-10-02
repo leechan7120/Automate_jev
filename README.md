@@ -122,7 +122,7 @@ NOTION_PROJECT_ROOT_PAGE_ID     자동 갱신할 프로젝트 root 문서의 페
 NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적으로 true 필요)
 ```
 
-Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. Docker worker는 성공하면 10분(`600초`)마다, 실패하면 5분(`300초`) 후 다시 실행되며, 매 실행마다 현재 날짜의 Slack 데이터를 새로 검색하고 확정된 일정이 있는지 다시 판정합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간만 있고 종료 시간이 확정되지 않은 timed event도 생성하지 않으며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
+Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. Docker worker는 성공하면 10분(`600초`)마다, 실패하면 5분(`300초`) 후 다시 실행되며, 매 실행마다 현재 날짜의 Slack 데이터를 새로 검색하고 확정된 일정이 있는지 다시 판정합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간이 확정됐지만 종료 시간이 없는 timed event는 1시간 일정으로 생성하며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
 
 Google Calendar 설정:
 
