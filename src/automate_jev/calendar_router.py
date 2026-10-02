@@ -232,6 +232,7 @@ class SlackCalendarRouter:
     memory_root: Path
     calendar_server: str = "calendar"
     create_tool: str = "calendar-create-event"
+    get_tool: str = "calendar-get-event"
     timezone_name: str = "UTC"
 
     async def route(self, day: date, *, query: str = "") -> Mapping[str, Any]:
@@ -247,8 +248,21 @@ class SlackCalendarRouter:
             key = _event_key(event)
             marker = self.memory_root / "calendar-events" / f"{key}.json"
             if marker.exists():
-                skipped.append(event.summary)
-                continue
+                marker_data = json.loads(marker.read_text(encoding="utf-8"))
+                event_id = _stored_event_id(marker_data)
+                if event_id:
+                    remote = await self.calendar.call_tool(
+                        server=self.calendar_server,
+                        tool=self.get_tool,
+                        arguments={"event_id": event_id},
+                    )
+                    if _event_exists(remote):
+                        skipped.append(event.summary)
+                        continue
+                    marker.unlink()
+                else:
+                    skipped.append(event.summary)
+                    continue
             result = await self.calendar.call_tool(
                 server=self.calendar_server,
                 tool=self.create_tool,
@@ -288,6 +302,24 @@ def _event_key(event: CalendarEvent) -> str:
         "evidence_ids": event.evidence_ids,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+
+
+def _stored_event_id(marker_data: Mapping[str, Any]) -> str:
+    result = marker_data.get("result", {})
+    if not isinstance(result, Mapping):
+        return ""
+    structured = result.get("structuredContent", result)
+    if not isinstance(structured, Mapping):
+        return ""
+    event = structured.get("event", {})
+    if not isinstance(event, Mapping):
+        return ""
+    return str(event.get("id", "")).strip()
+
+
+def _event_exists(result: Mapping[str, Any]) -> bool:
+    structured = result.get("structuredContent", result)
+    return isinstance(structured, Mapping) and structured.get("found") is True
 
 
 def _command(name: str) -> tuple[str, ...]:

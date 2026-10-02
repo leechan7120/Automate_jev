@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 
 TOOL_NAMES = {"calendar-create-event", "calendar_create_event"}
+GET_TOOL_NAMES = {"calendar-get-event", "calendar_get_event"}
 SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 
 
@@ -58,23 +59,32 @@ def _handle(request: Mapping[str, Any]) -> dict[str, Any] | None:
                     "required": ["summary", "start_date", "end_date", "timezone", "all_day"],
                     "additionalProperties": False,
                 },
-            }],
+            }, {
+                "name": "calendar-get-event",
+                "description": "Check whether a Google Calendar event still exists.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"event_id": {"type": "string", "minLength": 1}},
+                    "required": ["event_id"],
+                    "additionalProperties": False,
+                },
+                    }],
         })
     if method != "tools/call":
         return _error(request_id, -32601, f"Unknown MCP method: {method}")
     params = request.get("params")
     if not isinstance(params, Mapping):
         return _error(request_id, -32602, "MCP tool parameters are required")
-    if str(params.get("name", "")) not in TOOL_NAMES:
+    tool_name = str(params.get("name", ""))
+    if tool_name not in TOOL_NAMES | GET_TOOL_NAMES:
         return _error(request_id, -32601, f"Unknown tool: {params.get('name', '')}")
     arguments = params.get("arguments", {})
     if not isinstance(arguments, Mapping):
         return _error(request_id, -32602, "Tool arguments must be an object")
     try:
-        event = _create_event(arguments)
+        payload = _get_event(arguments) if tool_name in GET_TOOL_NAMES else {"event": _create_event(arguments)}
     except (RuntimeError, ValueError) as error:
         return _result(request_id, {"isError": True, "content": [{"type": "text", "text": str(error)}]})
-    payload = {"event": event}
     return _result(request_id, {
         "structuredContent": payload,
         "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
@@ -132,6 +142,23 @@ def _create_event(arguments: Mapping[str, Any]) -> dict[str, Any]:
         "summary": summary,
         "status": str(result.get("status", "confirmed")),
     }
+
+
+def _get_event(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    event_id = str(arguments.get("event_id", "")).strip()
+    if not event_id:
+        raise ValueError("event_id is required")
+    service = _calendar_service()
+    try:
+        event = service.events().get(
+            calendarId=os.environ.get("GOOGLE_CALENDAR_ID", "primary"),
+            eventId=event_id,
+        ).execute()
+    except Exception as error:
+        if getattr(getattr(error, "resp", None), "status", None) == 404:
+            return {"found": False, "event_id": event_id}
+        raise RuntimeError(f"Google Calendar event lookup failed: {event_id}") from error
+    return {"found": True, "event_id": event_id, "event": event}
 
 
 def _calendar_service() -> Any:

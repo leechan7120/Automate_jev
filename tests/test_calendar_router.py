@@ -1,4 +1,5 @@
 from datetime import date
+import json
 
 import pytest
 
@@ -20,6 +21,8 @@ class FakeMCP:
                 "user": "chanh",
                 "text": "10월 7일 오후 2시 배포 회의로 확정했습니다.",
             }]}
+        if tool == "calendar-get-event":
+            return {"structuredContent": {"found": True}}
         return {"created": True, "id": "event-1"}
 
 
@@ -98,3 +101,42 @@ async def test_router_creates_confirmed_event_once(tmp_path):
     assert first["created"][0]["summary"] == "배포 회의"
     assert second["skipped_duplicates"] == ["배포 회의"]
     assert provider.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_router_recreates_event_when_remote_event_was_deleted(tmp_path):
+    client = FakeMCP()
+    event = CalendarEvent(
+        summary="배포 회의",
+        start_date="2026-10-07",
+        start_time="14:00",
+        end_date="2026-10-07",
+        end_time="15:00",
+        timezone="Asia/Seoul",
+        all_day=False,
+        description="확정된 Slack 대화",
+        evidence_ids=("m-1",),
+    )
+    provider = StaticDecisionProvider((event,))
+    router = SlackCalendarRouter(
+        slack=SlackMCP(client),
+        calendar=client,
+        decision_provider=provider,
+        memory_root=tmp_path,
+    )
+
+    await router.route(date(2026, 10, 3))
+    marker = next((tmp_path / "calendar-events").glob("*.json"))
+    marker.write_text(json.dumps({"summary": event.summary, "result": {"structuredContent": {"event": {"id": "deleted-event"}}}}))
+
+    original_call_tool = client.call_tool
+
+    async def report_deleted(*, server, tool, arguments):
+        if tool == "calendar-get-event":
+            return {"structuredContent": {"found": False}}
+        return await original_call_tool(server=server, tool=tool, arguments=arguments)
+
+    client.call_tool = report_deleted
+    result = await router.route(date(2026, 10, 3))
+
+    assert result["created"][0]["summary"] == "배포 회의"
