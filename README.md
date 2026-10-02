@@ -64,7 +64,7 @@ uv run automate-jev-api
 
 `POST /v1/mcp/notion/sync`는 `{"query":"daily routine"}`를 받아 공식 Notion MCP의 검색 결과를 fetch하고 `.automate-jev/memory/semantic`에 저장합니다. MCP client는 `AUTOMATE_JEV_MCP_COMMAND` 환경 변수의 stdio command로 구성합니다. `POST /v1/mcp/notion/publish-routine`은 `NOTION_ROUTINE_PARENT_ID`로 지정한 `Routines` 페이지 아래에 새 routine 페이지를 만들며, `NOTION_PUBLISH_ENABLED=true`일 때만 동작합니다.
 
-Slack MCP는 `POST /v1/mcp/slack/daily-progress`로 특정 날짜의 Slack 메시지를 검색합니다. `automate-jev-daily-progress` worker가 배포 후 24시간마다 실행되어 Slack 메시지를 `data/episodic/slack-daily-YYYY-MM-DD.md`에 저장하고, `NOTION_DAILY_PROGRESS_PARENT_ID` 아래에 `Daily Progress - YYYY-MM-DD` 페이지를 생성 또는 갱신합니다. 문서는 Slack 내용을 `Progress`, `Discussions`, `Decisions`로 분류하고 날짜별 `v1`, `v2` 버전을 기록합니다. `AUTOMATE_JEV_LLM_ENABLED=true`이면 Gemini가 Slack 근거를 요약하며, 실패하면 원문 기반 분류로 자동 전환합니다. `NOTION_PROJECT_ROOT_PAGE_ID`를 설정하면 요약된 진행/논의/결정과 project overview를 root 페이지에도 날짜별 변경 블록으로 반영합니다.
+Slack MCP는 `POST /v1/mcp/slack/daily-progress`로 특정 날짜의 Slack 메시지를 검색합니다. `automate-jev-daily-progress` worker가 배포 후 24시간마다 실행되어 Slack 메시지를 `data/episodic/slack-daily-YYYY-MM-DD.md`에 저장하고, `NOTION_DAILY_PROGRESS_PARENT_ID` 아래에 `Daily Progress - YYYY-MM-DD` 페이지를 생성 또는 갱신합니다. 문서는 Slack 내용을 `Progress`, `Discussions`, `Decisions`로 분류하고 날짜별 `v1`, `v2` 버전을 기록합니다. `AUTOMATE_JEV_LLM_ENABLED=true`이면 Gemini가 Slack 근거에서 실제 workstream/project만 추출해 프로젝트별 진행, 논의, 결정, next action을 생성하며, 근거가 부족한 대화는 별도 프로젝트 페이지로 만들지 않습니다. 각 프로젝트 페이지는 `NOTION_PROJECT_ROOT_PAGE_ID` 아래에 자동 생성되고 이후 날짜에는 같은 페이지에 갱신됩니다. root 페이지에는 프로젝트 목록과 전체 project overview가 날짜별 변경 블록으로 반영됩니다.
 
 브라우저 UI 없이도 `http://127.0.0.1:8000`에서 기존 Workflow 검토와 실행 API를 사용할 수 있습니다. 개인 사용 기록과 외부 서비스 데이터는 MCP adapter를 통해 수집하고 local memory와 routine learner에서 처리합니다.
 

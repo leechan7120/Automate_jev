@@ -9,7 +9,7 @@ from typing import Any, Mapping
 from .memory import LocalMemoryStore, MemoryKind, MemoryRecord
 from .models import ContractError
 from .notion import NotionMCP
-from .progress_summarizer import ProgressSummarizer, ProgressSummary
+from .progress_summarizer import ProjectSummary, ProgressSummarizer, ProgressSummary
 from .slack import SlackMCP, SlackMessage
 
 
@@ -110,7 +110,47 @@ class DailyProgressService:
                     content=root_content,
                 )
                 notion_result = {**notion_result, "root": root_result}
+                project_results = await self._publish_projects(day, version, summary.projects)
+                if project_results:
+                    notion_result = {**notion_result, "projects": project_results}
         return DailyProgress(day, messages, content, record, version, notion_result)
+
+    async def _publish_projects(
+        self,
+        day: date,
+        version: int,
+        projects: tuple[ProjectSummary, ...],
+    ) -> list[Mapping[str, Any]]:
+        results: list[Mapping[str, Any]] = []
+        for project in projects:
+            slug = _project_slug(project.name)
+            marker = self.memory.root / "project-pages" / f"{slug}.json"
+            marker_data = _read_marker(marker)
+            page_id = str(marker_data.get("page_id", "")).strip()
+            if page_id:
+                existing = await self.notion.fetch(page_id)
+                content = _append_project_update(existing.text, day, version, project)
+                result = await self.notion.update_page(
+                    page_id=page_id,
+                    title=f"Project - {project.name}",
+                    content=content,
+                )
+                results.append({"name": project.name, "status": "updated", **result})
+            else:
+                content = _project_content(day, version, project)
+                result = await self.notion.publish_routine(
+                    title=f"Project - {project.name}",
+                    content=content,
+                    parent_id=self.project_root_page_id,
+                )
+                page_id = _page_id(result)
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(
+                    json.dumps({"name": project.name, "page_id": page_id}),
+                    encoding="utf-8",
+                )
+                results.append({"name": project.name, "status": "created", **result})
+        return results
 
     def _next_version(self, day: date) -> int:
         path = self.memory.root / "daily-progress-versions" / f"{day.isoformat()}.json"
@@ -166,6 +206,46 @@ def _summary_from_messages(messages: tuple[SlackMessage, ...]) -> ProgressSummar
     )
 
 
+def _project_slug(name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9가-힣._-]+", "-", name.strip().lower()).strip("-")
+    return (slug or "unnamed-project")[:96]
+
+
+def _project_content(day: date, version: int, project: ProjectSummary) -> str:
+    return _project_update(day, version, project)
+
+
+def _append_project_update(existing: str, day: date, version: int, project: ProjectSummary) -> str:
+    block = _project_update(day, version, project)
+    marker = re.compile(
+        rf"<!-- project-update:{re.escape(day.isoformat())} -->.*?<!-- /project-update -->",
+        re.DOTALL,
+    )
+    if marker.search(existing):
+        return marker.sub(block, existing, count=1)[:4_000]
+    return f"{existing.rstrip()}\n\n{block}"[:4_000] if existing.strip() else block
+
+
+def _project_update(day: date, version: int, project: ProjectSummary) -> str:
+    lines = [
+        f"<!-- project-update:{day.isoformat()} -->",
+        f"## {day.isoformat()} (v{version})",
+        "### Overview",
+        project.overview or "No project overview identified.",
+    ]
+    for title, bullets in (
+        ("Progress", project.progress),
+        ("Discussions", project.discussions),
+        ("Decisions", project.decisions),
+        ("Next actions", project.next_actions),
+    ):
+        lines.extend((f"### {title}", *(f"- {bullet}" for bullet in bullets)))
+        if not bullets:
+            lines.append("- None identified.")
+    lines.append("<!-- /project-update -->")
+    return "\n".join(lines)
+
+
 def _read_marker(path: Any) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -202,6 +282,8 @@ def _update_root(existing: str, day: date, version: int, summary: ProgressSummar
         *(f"- {bullet}" for bullet in summary.discussions),
         "### Decisions",
         *(f"- {bullet}" for bullet in summary.decisions),
+        "### Projects identified",
+        *(f"- {project.name}: {project.overview}" for project in summary.projects),
         *((["### Project overview", summary.project_overview] if summary.project_overview else [])),
         "<!-- /daily-progress -->",
     ]
@@ -212,5 +294,6 @@ def _update_root(existing: str, day: date, version: int, summary: ProgressSummar
     if marker.search(existing):
         content = marker.sub("\n".join(block), existing, count=1)
     else:
-        content = f"{existing.rstrip()}\n\n{'\n'.join(block)}" if existing.strip() else "\n".join(block)
+        block_text = "\n".join(block)
+        content = f"{existing.rstrip()}\n\n{block_text}" if existing.strip() else block_text
     return content[:4_000]

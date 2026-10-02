@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 TOOL_NAMES = {"slack-search-messages", "slack_search_messages"}
 SLACK_SEARCH_URL = "https://slack.com/api/search.messages"
+SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies"
 
 
 def main() -> None:
@@ -98,7 +99,39 @@ def _search_messages(query: str) -> list[dict[str, str]]:
     matches = raw_matches.get("matches", []) if isinstance(raw_matches, Mapping) else []
     if not isinstance(matches, list):
         return []
-    return [_normalize_message(item) for item in matches if isinstance(item, Mapping)]
+    messages: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in matches:
+        if not isinstance(item, Mapping):
+            continue
+        normalized = _normalize_message(item)
+        messages.append(normalized)
+        seen.add(normalized["id"])
+        if item.get("thread_ts") and item.get("reply_count"):
+            for reply in _fetch_replies(token, str(item.get("channel_id", "")), str(item["thread_ts"])):
+                normalized_reply = _normalize_message(reply)
+                if normalized_reply["id"] not in seen:
+                    messages.append(normalized_reply)
+                    seen.add(normalized_reply["id"])
+    return messages
+
+
+def _fetch_replies(token: str, channel_id: str, thread_ts: str) -> list[Mapping[str, Any]]:
+    if not channel_id or not thread_ts:
+        return []
+    request = Request(
+        SLACK_REPLIES_URL,
+        data=urlencode({"channel": channel_id, "ts": thread_ts, "limit": "100"}).encode("utf-8"),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return []
+    messages = body.get("messages", []) if isinstance(body, Mapping) and body.get("ok") is True else []
+    return messages if isinstance(messages, list) else []
 
 
 def _normalize_message(item: Mapping[str, Any]) -> dict[str, str]:
@@ -108,10 +141,12 @@ def _normalize_message(item: Mapping[str, Any]) -> dict[str, str]:
     author = item.get("username", item.get("user_name", item.get("user", "")))
     return {
         "id": str(item.get("ts", item.get("id", ""))),
+        "channel_id": str(item.get("channel_id", "")),
         "channel_name": str(channel),
         "user": str(author),
         "text": str(item.get("text", "")),
         "timestamp": str(item.get("ts", "")),
+        "thread_ts": str(item.get("thread_ts", "")),
         "permalink": str(item.get("permalink", "")),
     }
 

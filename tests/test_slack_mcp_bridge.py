@@ -19,10 +19,12 @@ def test_bridge_normalizes_slack_search_result():
 
     assert message == {
         "id": "123.456",
+        "channel_id": "",
         "channel_name": "engineering",
         "user": "chanh",
         "text": "API shipped",
         "timestamp": "123.456",
+        "thread_ts": "",
         "permalink": "",
     }
 
