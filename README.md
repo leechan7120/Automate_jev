@@ -62,7 +62,7 @@ uv run python -m automate_jev.integrated_demo --provider live --env-file .env
 uv run automate-jev-api
 ```
 
-`POST /v1/workflows/extract`는 `video`, `provider`, `workflow_id`, `allowed_root` multipart field를 받습니다. 기본 `fixture` 모드는 자격 증명 없이 업로드 계약을 검증합니다. `live` 모드는 `.env`의 `gemini_api_key`와 `gemini_model`을 사용합니다. 업로드는 허용된 video MIME과 50MB 이하로 제한되며, 모델 결과는 로컬 Workflow schema와 action catalog 검사를 다시 통과해야 합니다. 이 API는 Workflow 초안만 반환하고 실행을 승인하지 않습니다.
+`POST /v1/workflows/extract`는 `video`, `provider`, `workflow_id`, `allowed_root` multipart field를 받습니다. 기본 `fixture` 모드는 자격 증명 없이 업로드 계약을 검증합니다. `live` 모드는 `.env`의 `gemini_api_key`(호환 별칭: `jev_PJ_Gemini_Key`)와 `gemini_model`을 사용합니다. 업로드는 허용된 video MIME과 50MB 이하로 제한됩니다. 모델은 등록된 action ID와 단계 순서만 제안하며, domain·risk·성공 조건·완료 조건은 신뢰된 로컬 action catalog에서 다시 구성됩니다. 이 API는 Workflow 초안만 반환하고 실행을 승인하지 않습니다.
 
 브라우저에서 `http://127.0.0.1:8000`을 열면 업로드와 JSON 검토 화면을 사용할 수 있습니다. `POST /v1/workflows/review`는 수정된 Workflow를 다시 검증하고 정확한 초안 해시에 결속된 단기 검토 토큰을 발급합니다. 검토 토큰은 실행 승인 토큰과 분리되어 있으며 실행 권한을 부여하지 않습니다.
 
@@ -75,3 +75,5 @@ uv run automate-jev-api
 5. `confirm` action은 올바른 승인 증표 없이는 실행하지 않습니다.
 
 전체 10시간 계획은 [docs/HACKATHON_10H_PLAN.md](docs/HACKATHON_10H_PLAN.md)를 참고하세요.
+
+공공AX Series 4의 실제 화면 녹화 기능으로 통합 데모를 녹화하고 Gemini live 추출까지 통과한 재현 기록은 [docs/ACTUAL_RECORDING_TEST.md](docs/ACTUAL_RECORDING_TEST.md)에 있습니다.

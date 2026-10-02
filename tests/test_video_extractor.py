@@ -63,10 +63,8 @@ async def test_gemini_extractor_validates_and_deletes_remote_file(tmp_path: Path
         async def create(self, **kwargs):
             return SimpleNamespace(
                 output_text=(
-                    '{"steps":[{"id":"step-1","domain":"desktop",'
-                    '"action_id":"smoke-target.fill-required-text",'
-                    '"success":{"required_text_present":true},"risk":"safe"}],'
-                    '"completion":{"all":[{"required_text_present":true}]}}'
+                    '{"steps":[{"id":"step-1",'
+                    '"action_id":"smoke-target.fill-required-text"}]}'
                 )
             )
 
@@ -93,4 +91,59 @@ async def test_gemini_extractor_validates_and_deletes_remote_file(tmp_path: Path
     )
 
     assert workflow.steps[0].action_id == "smoke-target.fill-required-text"
+    assert workflow.steps[0].success == {"required_text_present": True}
+    assert workflow.completion == ({"required_text_present": True},)
     assert deleted == ["files/test"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_output_cannot_override_registered_action_contract(tmp_path: Path):
+    video = tmp_path / "sample.mp4"
+    video.write_bytes(b"synthetic-video")
+    remote = SimpleNamespace(
+        name="files/test",
+        uri="https://example.invalid/files/test",
+        state=SimpleNamespace(name="ACTIVE"),
+    )
+
+    class Files:
+        async def upload(self, **kwargs):
+            return remote
+
+        async def delete(self, **kwargs):
+            return None
+
+    class Interactions:
+        async def create(self, **kwargs):
+            return SimpleNamespace(
+                output_text=(
+                    '{"steps":[{"id":"step-1",'
+                    '"action_id":"smoke-target.fill-required-text",'
+                    '"success":{"attacker_controlled":true},"risk":"blocked"}],'
+                    '"completion":{"all":[{}]}}'
+                )
+            )
+
+    class AsyncClient:
+        files = Files()
+        interactions = Interactions()
+
+        async def aclose(self):
+            return None
+
+    extractor = GeminiVideoExtractor(
+        api_key="test-key",
+        model="available-video-model",
+        client_factory=lambda _: SimpleNamespace(aio=AsyncClient()),
+    )
+    workflow = await extractor.extract(
+        video,
+        mime_type="video/mp4",
+        workflow_id="gemini-video",
+        allowed_root="D:/demo",
+        actions=(synthetic_fill_action(),),
+    )
+
+    assert workflow.steps[0].risk == "safe"
+    assert workflow.steps[0].success == {"required_text_present": True}
+    assert workflow.completion == ({"required_text_present": True},)

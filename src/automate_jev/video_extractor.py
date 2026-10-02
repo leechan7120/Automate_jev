@@ -31,44 +31,25 @@ def _no_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _draft_schema(actions: tuple[Action, ...]) -> dict[str, Any]:
     action_ids = [action.id for action in actions]
-    risks = sorted({action.risk.value for action in actions})
     return {
         "type": "object",
         "additionalProperties": False,
-        "required": ["steps", "completion"],
+        "required": ["steps"],
         "properties": {
             "steps": {
                 "type": "array",
                 "minItems": 1,
-                "maxItems": min(12, len(actions)),
+                "maxItems": min(8, len(actions)),
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["id", "domain", "action_id", "success", "risk"],
+                    "required": ["id", "action_id"],
                     "properties": {
                         "id": {"type": "string"},
-                        "domain": {
-                            "type": "string",
-                            "enum": ["browser", "desktop", "filesystem", "system"],
-                        },
                         "action_id": {"type": "string", "enum": action_ids},
-                        "success": {"type": "object"},
-                        "risk": {"type": "string", "enum": risks},
                     },
                 },
-            },
-            "completion": {
-                "type": "object",
-                "required": ["all"],
-                "properties": {
-                    "all": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 8,
-                        "items": {"type": "object"},
-                    }
-                },
-            },
+            }
         },
     }
 
@@ -93,12 +74,42 @@ def _finalize_draft(
 ) -> WorkflowDefinition:
     if not isinstance(draft, dict):
         raise ContractError("extracted workflow draft must be an object")
+    raw_steps = draft.get("steps")
+    if not isinstance(raw_steps, list) or not 1 <= len(raw_steps) <= 8:
+        raise ContractError("extracted workflow must contain 1 to 8 steps")
+    by_id = {action.id: action for action in actions}
+    steps: list[dict[str, Any]] = []
+    completion: list[dict[str, Any]] = []
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            raise ContractError("extracted workflow step must be an object")
+        action = by_id.get(raw_step.get("action_id"))
+        if action is None:
+            raise ContractError("extracted workflow action is not registered")
+        success: dict[str, Any] = {}
+        for effect in action.expected_effects:
+            key = effect.get("key")
+            if not isinstance(key, str) or not key or key in success or "value" not in effect:
+                raise ContractError("registered action has an invalid expected effect")
+            success[key] = effect["value"]
+        if not 1 <= len(success) <= 8:
+            raise ContractError("registered action must define 1 to 8 expected effects")
+        steps.append(
+            {
+                "id": raw_step.get("id"),
+                "domain": action.domain,
+                "action_id": action.id,
+                "success": success,
+                "risk": action.risk.value,
+            }
+        )
+        completion.append(success)
     document = {
         "schema_version": "1.0",
         "workflow_id": workflow_id,
         "allowed_root": allowed_root,
-        "steps": draft.get("steps"),
-        "completion": draft.get("completion"),
+        "steps": steps,
+        "completion": {"all": completion},
     }
     workflow = parse_workflow(document)
     workflow.bind_actions(actions)
@@ -228,8 +239,6 @@ class GeminiVideoExtractor:
             catalog = [
                 {
                     "id": action.id,
-                    "domain": action.domain,
-                    "risk": action.risk.value,
                     "description": action.description,
                 }
                 for action in actions
@@ -243,7 +252,9 @@ class GeminiVideoExtractor:
                         "text": (
                             "Extract a minimal workflow draft from this demonstration. Use only "
                             f"these registered actions: {json.dumps(catalog, ensure_ascii=False)}. "
-                            "Do not invent targets, arguments, credentials, or filesystem paths."
+                            "Return only a stable step id and registered action_id for each step. "
+                            "Do not invent targets, arguments, credentials, filesystem paths, "
+                            "success conditions, risk levels, or completion conditions."
                         ),
                     },
                 ],

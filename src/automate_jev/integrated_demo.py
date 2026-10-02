@@ -53,11 +53,14 @@ async def run_integrated_demo(
     journal_root: Path,
     provider_mode: str,
     env_path: Path,
+    hold_seconds: float = 0,
 ) -> dict[str, Any]:
     if not host_path.is_file() or not target_path.is_file():
         raise ContractError("compiled host or smoke target is missing; build the Windows Host first")
     if provider_mode not in {"fixture", "live"}:
         raise ContractError("provider mode must be fixture or live")
+    if not 0 <= hold_seconds <= 10:
+        raise ContractError("hold_seconds must be between 0 and 10")
 
     session_id = f"integrated-{uuid4().hex}"
     action = synthetic_fill_action()
@@ -89,6 +92,8 @@ async def run_integrated_demo(
             idempotency_key=f"{session_id}:step-1",
         )
         final_observation = await runtime.observe()
+        if hold_seconds:
+            await asyncio.sleep(hold_seconds)
         return {
             "provider": provider_mode.upper(),
             "status": result.status.value,
@@ -121,6 +126,7 @@ def main() -> None:
         description="Run the policy-gated Jev-to-Windows Host integration demo."
     )
     parser.add_argument("--provider", choices=("fixture", "live"), default="fixture")
+    parser.add_argument("--hold-seconds", type=float, default=0)
     parser.add_argument("--env-file", type=Path, default=repository_root / ".env")
     parser.add_argument(
         "--host",
@@ -145,6 +151,7 @@ def main() -> None:
             journal_root=arguments.journal_root,
             provider_mode=arguments.provider,
             env_path=arguments.env_file,
+            hold_seconds=arguments.hold_seconds,
         )
     )
     print(result)

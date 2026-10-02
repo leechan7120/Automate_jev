@@ -17,7 +17,8 @@ namespace AutomateJev.SmokeTarget
                 Text = "Automate Jev Synthetic Target",
                 Width = 640,
                 Height = 360,
-                StartPosition = FormStartPosition.CenterScreen
+                StartPosition = FormStartPosition.CenterScreen,
+                WindowState = FormWindowState.Maximized
             };
             TextBox editor = new TextBox
             {
