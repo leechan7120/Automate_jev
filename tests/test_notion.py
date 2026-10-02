@@ -101,3 +101,16 @@ async def test_notion_fetch_accepts_single_structured_page():
     assert page.page_id == "page-1"
     assert page.title == "Project Root"
     assert page.text == "# Project overview"
+
+
+@pytest.mark.asyncio
+async def test_notion_fetch_accepts_markdown_content_response():
+    class FetchClient:
+        async def call_tool(self, *, server, tool, arguments):
+            return {"content": [{"type": "text", "text": "# Project Root\n\nOverview"}]}
+
+    page = await NotionMCP(FetchClient()).fetch("page-1")
+
+    assert page.page_id == "page-1"
+    assert page.title == "Project Root"
+    assert page.text == "# Project Root\n\nOverview"

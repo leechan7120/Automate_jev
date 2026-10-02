@@ -55,9 +55,16 @@ class NotionMCP:
             arguments={"id": page_id},
         )
         items = _result_items(result)
-        if not items:
-            raise ContractError("Notion fetch returned no page")
-        return _page_from_mapping(items[0])
+        if items:
+            return _page_from_mapping(items[0])
+        text = _result_text(result)
+        if text:
+            title = next(
+                (line.removeprefix("# ").strip() for line in text.splitlines() if line.startswith("# ")),
+                "Untitled Notion page",
+            )
+            return NotionPage(page_id=page_id, title=title[:512], text=text[:3_500])
+        raise ContractError("Notion fetch returned no page")
 
     async def sync_to_memory(self, query: str, store: LocalMemoryStore) -> tuple[MemoryRecord, ...]:
         pages = await self.search(query)
@@ -137,6 +144,26 @@ def _result_items(result: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(raw, (list, tuple)):
         return ()
     return tuple(item for item in raw if isinstance(item, Mapping))
+
+
+def _result_text(result: Mapping[str, Any]) -> str:
+    for key in ("structuredContent", "content"):
+        value: Any = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, Mapping):
+            nested = value.get("content", value.get("text", ""))
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+        if isinstance(value, (list, tuple)):
+            text = "\n".join(
+                str(item.get("text", ""))
+                for item in value
+                if isinstance(item, Mapping) and item.get("type") == "text"
+            ).strip()
+            if text:
+                return text
+    return ""
 
 
 def _page_from_mapping(value: Mapping[str, Any]) -> NotionPage:
