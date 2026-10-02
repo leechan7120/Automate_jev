@@ -1,0 +1,84 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/automate-jev-backend
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAME }}:latest
+            ghcr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload deployment files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.yml"
+          target: ${{ secrets.DEPLOY_PATH }}
+      - name: Upload Nginx configuration
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "deploy/nginx/automate-jev-api.conf"
+          target: "/tmp"
+          strip_components: 2
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          GH_OWNER: ${{ github.repository_owner }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          IMAGE_TAG: ${{ github.sha }}
+          JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+          AUTOMATE_JEV_MCP_COMMAND: ${{ secrets.AUTOMATE_JEV_MCP_COMMAND }}
+          NOTION_ROUTINE_PARENT_ID: ${{ secrets.NOTION_ROUTINE_PARENT_ID }}
+          NOTION_PUBLISH_ENABLED: ${{ secrets.NOTION_PUBLISH_ENABLED }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: GH_OWNER,GHCR_USERNAME,IMAGE_TAG,JEV_API_KEY,AUTOMATE_JEV_MCP_COMMAND,NOTION_ROUTINE_PARENT_ID,NOTION_PUBLISH_ENABLED
+          script: |
+            cd "${{ secrets.DEPLOY_PATH }}"
+            umask 077
+            mkdir -p data
+            printf 'GH_OWNER=%s\nIMAGE_TAG=%s\nJEV_API_KEY=%s\nAUTOMATE_JEV_MCP_COMMAND=%s\nNOTION_ROUTINE_PARENT_ID=%s\nNOTION_PUBLISH_ENABLED=%s\n' "$GH_OWNER" "$IMAGE_TAG" "$JEV_API_KEY" "$AUTOMATE_JEV_MCP_COMMAND" "$NOTION_ROUTINE_PARENT_ID" "$NOTION_PUBLISH_ENABLED" > .env
+            test -s .env
+            sudo install -m 0644 /tmp/automate-jev-api.conf /etc/nginx/sites-available/automate-jev-api
+            sudo ln -sfn /etc/nginx/sites-available/automate-jev-api /etc/nginx/sites-enabled/automate-jev-api
+            sudo nginx -t
+            sudo systemctl reload nginx
+            echo "${{ secrets.GHCR_READ_TOKEN }}" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            docker compose --env-file .env pull
+            docker compose --env-file .env up -d --remove-orphans
+            docker compose --env-file .env ps
+            docker image prune -f

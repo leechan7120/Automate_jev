@@ -56,17 +56,59 @@ uv run python -m automate_jev.integrated_demo --provider live --env-file .env
 
 `schemas/workflow.schema.json` 기반 Workflow는 `automate_jev.workflow.load_workflow`로 읽습니다. 로더는 크기와 JSON 구조를 제한하고, Workflow의 action ID와 위험도가 로컬의 신뢰된 action catalog와 일치할 때만 결속합니다.
 
-영상에서 실행되지 않은 Workflow 초안을 만드는 로컬 API도 실행할 수 있습니다.
+MCP 서비스 데이터를 local semantic memory로 가져오는 API도 실행할 수 있습니다.
 
 ```powershell
 uv run automate-jev-api
 ```
 
-`POST /v1/workflows/extract`는 `video`, `provider`, `workflow_id`, `allowed_root` multipart field를 받습니다. 기본 `fixture` 모드는 자격 증명 없이 업로드 계약을 검증합니다. `live` 모드는 `.env`의 `gemini_api_key`(호환 별칭: `jev_PJ_Gemini_Key`)와 `gemini_model`을 사용합니다. 업로드는 허용된 video MIME과 50MB 이하로 제한됩니다. 모델은 등록된 action ID와 단계 순서만 제안하며, domain·risk·성공 조건·완료 조건은 신뢰된 로컬 action catalog에서 다시 구성됩니다. 이 API는 Workflow 초안만 반환하고 실행을 승인하지 않습니다.
+`POST /v1/mcp/notion/sync`는 `{"query":"daily routine"}`를 받아 공식 Notion MCP의 검색 결과를 fetch하고 `.automate-jev/memory/semantic`에 저장합니다. MCP client는 `AUTOMATE_JEV_MCP_COMMAND` 환경 변수의 stdio command로 구성합니다. `POST /v1/mcp/notion/publish-routine`은 `NOTION_ROUTINE_PARENT_ID`로 지정한 `Routines` 페이지 아래에 새 routine 페이지를 만들며, `NOTION_PUBLISH_ENABLED=true`일 때만 동작합니다.
 
-브라우저에서 `http://127.0.0.1:8000`을 열면 영상 업로드부터 Workflow 검토와 실제 안전 실행까지 한 화면에서 사용할 수 있습니다. 공공AX `.series4.json`을 함께 올리면 크기·JSON·버전을 검증하고, 허용된 `TextEntry`가 로컬 action catalog 및 추출 Workflow와 일치하는지 확인합니다. 사이드카가 임의 action이나 입력값을 만들 수는 없습니다.
+브라우저 UI 없이도 `http://127.0.0.1:8000`에서 기존 Workflow 검토와 실행 API를 사용할 수 있습니다. 개인 사용 기록과 외부 서비스 데이터는 MCP adapter를 통해 수집하고 local memory와 routine learner에서 처리합니다.
+
+### Notion MCP 연결
+
+MCP 서버 명령을 준비한 뒤 Notion 페이지를 local semantic memory로 가져옵니다. `--` 뒤에는 실제 MCP stdio 서버 실행 명령을 넣습니다. 서버마다 tool 이름이 다를 수 있으므로 `--search-tool`로 조정할 수 있습니다.
+
+```powershell
+py -m pip install -e "."
+node --version
+npx --version
+automate-jev-notion-sync --query "daily routine" --memory-root .automate-jev/memory -- npx -y mcp-remote https://mcp.notion.com/mcp
+```
+
+첫 실행 시 `mcp-remote`가 OAuth 인증 URL을 출력하거나 브라우저를 엽니다. Notion workspace를 승인하면 이후 `notion-get-tool-access`로 접근 가능한 tool을 확인하고 `notion-search`와 `notion-fetch`를 호출합니다. 결과는 `.automate-jev/memory/semantic` 아래에 저장됩니다. MCP tool 호출은 [mcp.py](src/automate_jev/mcp.py)의 JSON-RPC stdio client를 사용하고, Notion 변환과 routine 문서 발행 계약은 [notion.py](src/automate_jev/notion.py)에 있습니다.
+
+Notion MCP는 공식적으로 `https://mcp.notion.com/mcp` Streamable HTTP와 OAuth를 사용합니다. 이 프로젝트는 `mcp-remote`를 stdio bridge로 사용하므로 프로젝트에 Notion token을 저장할 필요가 없습니다. OAuth가 끝난 뒤 다음 파일이 생성되는지 확인합니다.
+
+```powershell
+Get-ChildItem .automate-jev\memory\semantic
+```
 
 `POST /v1/workflows/review`는 수정된 Workflow를 다시 검증하고 정확한 초안 해시에 결속된 단기 검토 토큰을 발급합니다. `POST /v1/executions`는 이 토큰을 일회성 실행 세션으로 교환하며, 같은 토큰의 재사용이나 검토 후 Workflow 변경을 거부합니다. `GET /v1/executions/{session_id}`에서 `QUEUED / RUNNING / SUCCESS / BLOCKED / UNKNOWN` 상태와 단계별 원인을 조회할 수 있습니다. 실제 실행은 기존 Jev provider, 정책 gate, Windows Host, bounded verifier, journal 경로를 그대로 사용합니다.
+
+### AWS EC2 배포
+
+이 저장소에는 GHCR publish와 EC2 Docker Compose 배포를 위한 [Dockerfile](Dockerfile), [docker-compose.yml](docker-compose.yml), [CD workflow](.github/workflows/cd.yml), Nginx 설정이 포함되어 있습니다. `main`에 push하면 이미지를 만들고 EC2에서 새 컨테이너를 실행합니다. 실행 기록과 local memory는 EC2의 `data/`에 마운트되어 재배포해도 유지됩니다. 현재 앱은 SQLite를 사용하지 않으므로 별도 DB 서버는 필요하지 않습니다.
+
+GitHub Actions Secrets로 다음 값을 등록해야 합니다.
+
+```text
+DEPLOY_HOST       EC2 공인 주소
+DEPLOY_USER       SSH 사용자
+DEPLOY_SSH_KEY    EC2 접속용 private key 전체 내용
+DEPLOY_PATH       EC2 배포 디렉터리 (예: /opt/automate-jev)
+GHCR_USERNAME     GHCR 로그인 사용자명
+GHCR_READ_TOKEN   GHCR private image pull 권한 token
+JEV_API_KEY       Jev provider key
+AUTOMATE_JEV_MCP_COMMAND  MCP stdio command (예: npx -y mcp-remote https://mcp.notion.com/mcp)
+NOTION_ROUTINE_PARENT_ID   Notion의 Automate Jev/Routines 부모 페이지 ID
+NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적으로 true 필요)
+```
+
+EC2에는 Docker Engine, Docker Compose plugin, Nginx가 설치되어 있어야 하며, `DEPLOY_USER`가 Docker를 sudo 없이 실행할 수 있어야 합니다. Nginx 설정은 기본적으로 `server_name _`과 HTTP 80을 사용하므로 실제 도메인과 HTTPS는 EC2의 Certbot 또는 기존 TLS 설정에 맞춰 변경해야 합니다.
+
+이 Docker 배포는 현재 API, MCP memory sync, 명시적 Notion routine publication을 제공하는 Linux backend 배포입니다. `/v1/executions`의 native Windows 실행은 컨테이너 안에 `AutomateJev.WindowsHost.exe`가 없기 때문에 AWS Linux에서 완료되지 않습니다. 실제 Windows UI 자동화까지 필요하면 Windows worker를 별도 운영하고 API에서 worker로 전달하는 구조가 필요합니다. Notion MCP OAuth는 AWS 실행 환경에서 한 번 인증하고, mcp-remote 인증 캐시를 영속 volume에 보존해야 합니다. CI/CD는 페이지를 자동 생성하지 않고 컨테이너만 배포하므로, publish API를 명시적으로 호출해야 중복 페이지가 생기지 않습니다.
 
 ## 안전 불변식
 
@@ -77,6 +119,27 @@ uv run automate-jev-api
 5. `confirm` action은 올바른 승인 증표 없이는 실행하지 않습니다.
 
 전체 10시간 계획은 [docs/HACKATHON_10H_PLAN.md](docs/HACKATHON_10H_PLAN.md)를 참고하세요.
+
+## 개인 루틴 자동화 기반
+
+반복 사용 기록은 사용자가 별도로 주입하는 `action_id` 이벤트가 아니라, `ObservedActivity`로 수집하는 현재 foreground·서비스·주제·시간대 관찰값입니다. `PassiveActivityMonitor`는 같은 화면이 계속 유지되는 동안 중복 기록하지 않고 로컬 activity memory에만 저장합니다. `PassiveRoutineLearner`는 이 자연스러운 사용 기록에서 일간·주간·월간 패턴을 찾은 뒤 등록된 capability와 맥락을 매칭합니다.
+
+```python
+from automate_jev.activity import PassiveRoutineLearner
+from automate_jev.routine import AutonomousRoutineRunner
+
+patterns = PassiveRoutineLearner().learn(activity_memory.read(), registered_actions)
+results = await AutonomousRoutineRunner(execute=run_registered_action).run_due(
+	patterns,
+	now=current_time,
+)
+```
+
+`run_registered_action`은 기존 `AgentOrchestrator.run_next`를 호출하도록 연결해야 합니다. 따라서 자동화도 action registry, state revision, journal, verifier를 그대로 통과하며, `confirm`과 `blocked` action은 학습되더라도 사용자 승인 없이 실행되지 않습니다. 사용자의 반복 습관이 곧바로 외부 발송 권한으로 바뀌지 않도록 하는 경계입니다. 현재 activity source는 Windows foreground와 MCP sync가 제공하며, 수동으로 routine action을 주입하는 방식은 주 경로가 아닙니다.
+
+Aside의 공개된 memory 흐름처럼 활동은 `ActivityMemoryExtractor`와 `NotionMCP`를 통해 local markdown memory로 정리되고, [memory.py](src/automate_jev/memory.py)의 파일에서 사람이 직접 확인·수정할 수 있습니다. 현재 구현은 `episodic / semantic / site / routine` memory 종류와 검색 계약을 제공합니다.
+
+MCP 플랫폼 연결은 `MCPActionExecutor`와 `MCPToolClient` 계약을 사용합니다. Notion MCP 서버는 `target={"mcp_server": "notion", "mcp_tool": "..."}`, Slack MCP 서버는 `target={"mcp_server": "slack", "mcp_tool": "..."}`처럼 등록된 action으로 표현하고, 실제 MCP transport client만 주입하면 같은 루틴 학습·정책·journal 경로를 공유합니다.
 
 공공AX Series 4의 실제 화면 녹화 기능으로 통합 데모를 녹화하고 Gemini live 추출까지 통과한 재현 기록은 [docs/ACTUAL_RECORDING_TEST.md](docs/ACTUAL_RECORDING_TEST.md)에 있습니다.
 

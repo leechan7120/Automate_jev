@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+.pytest_cache
+.automate-jev
+.env
+.env.*
+!.env.example
+windows-host/bin
+**/__pycache__
+**/*.pyc

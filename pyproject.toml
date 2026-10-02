@@ -14,7 +14,6 @@ dependencies = [
   "fastapi>=0.115",
   "google-genai>=1.0",
   "jsonschema>=4.23",
-  "python-multipart>=0.0.20",
   "typesafe-sdk>=0.6.0",
   "uvicorn>=0.34",
 ]
@@ -28,6 +27,7 @@ automate-jev-jev-smoke = "automate_jev.live_smoke:main"
 automate-jev-windows-smoke = "automate_jev.windows_ui_smoke:main"
 automate-jev-integrated-demo = "automate_jev.integrated_demo:main"
 automate-jev-api = "automate_jev.api:main"
+automate-jev-notion-sync = "automate_jev.notion_sync:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/automate_jev"]
