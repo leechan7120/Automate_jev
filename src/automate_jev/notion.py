@@ -29,6 +29,7 @@ class NotionMCP:
     search_tool: str = "notion-search"
     fetch_tool: str = "notion-fetch"
     create_tool: str = "notion-create-pages"
+    update_tool: str = "notion-update-page"
 
     async def search(self, query: str) -> tuple[NotionPage, ...]:
         if not query.strip() or len(query) > 512:
@@ -90,6 +91,20 @@ class NotionMCP:
                     "properties": {"title": title[:200]},
                     "content": content[:4_000],
                 }],
+            },
+        )
+
+    async def update_page(self, *, page_id: str, title: str, content: str) -> Mapping[str, Any]:
+        if not page_id.strip() or not title.strip() or not content.strip():
+            raise ContractError("Notion page update requires page_id, title, and content")
+        return await self.client.call_tool(
+            server=self.server,
+            tool=self.update_tool,
+            arguments={
+                "allow_async": False,
+                "page_id": page_id,
+                "command": "replace_content",
+                "new_str": content[:4_000],
             },
         )
 

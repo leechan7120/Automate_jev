@@ -59,3 +59,26 @@ async def test_notion_routine_publication_uses_configured_parent():
             }],
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_notion_page_update_replaces_content():
+    client = FakeMCP()
+
+    result = await NotionMCP(client).update_page(
+        page_id="page-1",
+        title="Project Root",
+        content="# Updated project overview",
+    )
+
+    assert result == {"created": True}
+    assert client.calls[-1] == (
+        "notion",
+        "notion-update-page",
+        {
+            "allow_async": False,
+            "page_id": "page-1",
+            "command": "replace_content",
+            "new_str": "# Updated project overview",
+        },
+    )

@@ -1,0 +1,94 @@
+from datetime import date
+
+import pytest
+
+from automate_jev.daily_progress import DailyProgressService
+from automate_jev.memory import LocalMemoryStore
+from automate_jev.notion import NotionMCP
+from automate_jev.slack import SlackMCP
+
+
+class FakeMCP:
+    def __init__(self):
+        self.calls = []
+
+    async def call_tool(self, *, server, tool, arguments):
+        self.calls.append((server, tool, dict(arguments)))
+        if server == "slack":
+            return {"messages": [{"id": "m-1", "channel_name": "eng", "user": "chanh", "text": "Shipped the API integration."}]}
+        if tool in {"notion-create-pages", "notion-update-page"}:
+            return {"created": True, "id": "daily-page-1"}
+        if tool == "notion-fetch":
+            return {"results": [{"id": "root-page", "title": "Project Root", "text": "# Project overview"}]}
+        raise AssertionError((server, tool))
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_is_saved_and_published(tmp_path):
+    client = FakeMCP()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+        notion_parent_id="daily-progress-page",
+        publish_enabled=True,
+    )
+
+    progress = await service.collect_and_publish(date(2026, 10, 3))
+
+    assert progress.messages[0].text == "Shipped the API integration."
+    assert "Shipped the API integration." in progress.content
+    assert (tmp_path / "episodic" / "slack-daily-2026-10-03.md").exists()
+    assert client.calls[-1][0:2] == ("notion", "notion-create-pages")
+    assert client.calls[-1][2]["parent"] == {"page_id": "daily-progress-page"}
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_does_not_publish_by_default(tmp_path):
+    client = FakeMCP()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+    )
+
+    await service.collect_and_publish(date(2026, 10, 3))
+
+    assert all(tool != "notion-create-pages" for _, tool, _ in client.calls)
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_does_not_create_duplicate_page_after_restart(tmp_path):
+    client = FakeMCP()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+        notion_parent_id="daily-progress-page",
+        publish_enabled=True,
+    )
+
+    await service.collect_and_publish(date(2026, 10, 3))
+    await service.collect_and_publish(date(2026, 10, 3))
+
+    assert [tool for _, tool, _ in client.calls].count("notion-create-pages") == 1
+    assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 1
+
+
+@pytest.mark.asyncio
+async def test_daily_progress_updates_project_root(tmp_path):
+    client = FakeMCP()
+    service = DailyProgressService(
+        slack=SlackMCP(client),
+        notion=NotionMCP(client),
+        memory=LocalMemoryStore(tmp_path),
+        notion_parent_id="daily-progress-page",
+        project_root_page_id="root-page",
+        publish_enabled=True,
+    )
+
+    await service.collect_and_publish(date(2026, 10, 3))
+
+    root_updates = [arguments for server, tool, arguments in client.calls if tool == "notion-update-page"]
+    assert len(root_updates) == 1
+    assert "## 2026-10-03 (v1)" in root_updates[0]["new_str"]

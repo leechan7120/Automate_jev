@@ -64,6 +64,8 @@ uv run automate-jev-api
 
 `POST /v1/mcp/notion/sync`는 `{"query":"daily routine"}`를 받아 공식 Notion MCP의 검색 결과를 fetch하고 `.automate-jev/memory/semantic`에 저장합니다. MCP client는 `AUTOMATE_JEV_MCP_COMMAND` 환경 변수의 stdio command로 구성합니다. `POST /v1/mcp/notion/publish-routine`은 `NOTION_ROUTINE_PARENT_ID`로 지정한 `Routines` 페이지 아래에 새 routine 페이지를 만들며, `NOTION_PUBLISH_ENABLED=true`일 때만 동작합니다.
 
+Slack MCP는 `POST /v1/mcp/slack/daily-progress`로 특정 날짜의 Slack 메시지를 검색합니다. `automate-jev-daily-progress` worker가 배포 후 24시간마다 실행되어 Slack 메시지를 `data/episodic/slack-daily-YYYY-MM-DD.md`에 저장하고, `NOTION_DAILY_PROGRESS_PARENT_ID` 아래에 `Daily Progress - YYYY-MM-DD` 페이지를 생성 또는 갱신합니다. 문서는 Slack 내용을 `Progress`, `Discussions`, `Decisions`로 분류하고 날짜별 `v1`, `v2` 버전을 기록합니다. `AUTOMATE_JEV_LLM_ENABLED=true`이면 Gemini가 Slack 근거를 요약하며, 실패하면 원문 기반 분류로 자동 전환합니다. `NOTION_PROJECT_ROOT_PAGE_ID`를 설정하면 요약된 진행/논의/결정과 project overview를 root 페이지에도 날짜별 변경 블록으로 반영합니다.
+
 브라우저 UI 없이도 `http://127.0.0.1:8000`에서 기존 Workflow 검토와 실행 API를 사용할 수 있습니다. 개인 사용 기록과 외부 서비스 데이터는 MCP adapter를 통해 수집하고 local memory와 routine learner에서 처리합니다.
 
 ### Notion MCP 연결
@@ -102,13 +104,23 @@ GHCR_USERNAME     GHCR 로그인 사용자명
 GHCR_READ_TOKEN   GHCR private image pull 권한 token
 JEV_API_KEY       Jev provider key
 AUTOMATE_JEV_MCP_COMMAND  MCP stdio command (예: npx -y mcp-remote https://mcp.notion.com/mcp)
+AUTOMATE_JEV_SLACK_MCP_COMMAND  Slack MCP stdio command
+AUTOMATE_JEV_SLACK_SERVER       Slack MCP server name (기본 slack)
+AUTOMATE_JEV_SLACK_SEARCH_TOOL  Slack 검색 tool 이름 (기본 slack-search-messages)
+AUTOMATE_JEV_SLACK_QUERY        날짜 필터를 대체할 Slack 검색어 (보통 비워둠)
+AUTOMATE_JEV_TIMEZONE           일일 집계 timezone (예: Asia/Seoul)
+AUTOMATE_JEV_LLM_ENABLED        Gemini Slack 요약 활성화 (기본 false)
+GEMINI_API_KEY                  Gemini API key (LLM 활성화 시 필요)
+GEMINI_MODEL                    Gemini 모델 (예: gemini-2.5-flash)
 NOTION_ROUTINE_PARENT_ID   Notion의 Automate Jev/Routines 부모 페이지 ID
+NOTION_DAILY_PROGRESS_PARENT_ID  Notion의 Automate Jev/Daily Progress 부모 페이지 ID
+NOTION_PROJECT_ROOT_PAGE_ID     자동 갱신할 프로젝트 root 문서의 페이지 ID
 NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적으로 true 필요)
 ```
 
 EC2에는 Docker Engine, Docker Compose plugin, Nginx가 설치되어 있어야 하며, `DEPLOY_USER`가 Docker를 sudo 없이 실행할 수 있어야 합니다. Nginx 설정은 기본적으로 `server_name _`과 HTTP 80을 사용하므로 실제 도메인과 HTTPS는 EC2의 Certbot 또는 기존 TLS 설정에 맞춰 변경해야 합니다.
 
-이 Docker 배포는 현재 API, MCP memory sync, 명시적 Notion routine publication을 제공하는 Linux backend 배포입니다. `/v1/executions`의 native Windows 실행은 컨테이너 안에 `AutomateJev.WindowsHost.exe`가 없기 때문에 AWS Linux에서 완료되지 않습니다. 실제 Windows UI 자동화까지 필요하면 Windows worker를 별도 운영하고 API에서 worker로 전달하는 구조가 필요합니다. Notion MCP OAuth는 AWS 실행 환경에서 한 번 인증하고, mcp-remote 인증 캐시를 영속 volume에 보존해야 합니다. CI/CD는 페이지를 자동 생성하지 않고 컨테이너만 배포하므로, publish API를 명시적으로 호출해야 중복 페이지가 생기지 않습니다.
+이 Docker 배포는 API, MCP memory sync, Slack daily-progress worker, 명시적 Notion routine publication을 제공하는 Linux backend 배포입니다. `/v1/executions`의 native Windows 실행은 컨테이너 안에 `AutomateJev.WindowsHost.exe`가 없기 때문에 AWS Linux에서 완료되지 않습니다. 실제 Windows UI 자동화까지 필요하면 Windows worker를 별도 운영하고 API에서 worker로 전달하는 구조가 필요합니다. Notion과 Slack MCP OAuth는 AWS 실행 환경에서 각각 한 번 인증하고, mcp-remote 인증 캐시를 영속 volume에 보존해야 합니다. CI/CD는 페이지를 자동 생성하지 않고 컨테이너만 배포하므로, Daily Progress worker가 정해진 주기로만 페이지를 생성합니다.
 
 ## 안전 불변식
 

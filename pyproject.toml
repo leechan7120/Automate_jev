@@ -28,6 +28,7 @@ automate-jev-windows-smoke = "automate_jev.windows_ui_smoke:main"
 automate-jev-integrated-demo = "automate_jev.integrated_demo:main"
 automate-jev-api = "automate_jev.api:main"
 automate-jev-notion-sync = "automate_jev.notion_sync:main"
+automate-jev-daily-progress = "automate_jev.daily_progress_sync:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/automate_jev"]

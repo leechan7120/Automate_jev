@@ -3,18 +3,23 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shlex
+from datetime import date
 from typing import Any
 
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
 from .draft_review import DraftReviewService, DraftReviewToken
+from .env import load_gemini_settings
 from .execution_session import ExecutionRunner, ExecutionSessionService
+from .daily_progress import DailyProgressService
 from .integrated_demo import run_integrated_demo, synthetic_fill_action
 from .mcp import MCPStdioClient, MCPToolClient
 from .memory import LocalMemoryStore
 from .models import ContractError
 from .notion import NotionMCP
+from .progress_summarizer import GeminiProgressSummarizer
+from .slack import SlackMCP
 from .workflow import WorkflowDefinition, parse_workflow
 
 
@@ -63,8 +68,8 @@ MCP_HTML = """<!doctype html>
 <body><main><h1>Automate Jev MCP</h1><p>MCP 서비스에서 개인 데이터를 가져와 local semantic memory에 저장합니다.</p><form id="sync"><label>Notion 검색어</label><input name="query" value="daily routine" required><button>MCP 데이터 동기화</button></form><div id="status" class="status">대기 중</div></main><script>document.querySelector('#sync').onsubmit=async event=>{event.preventDefault();const query=new FormData(event.target).get('query');const status=document.querySelector('#status');status.textContent='MCP에서 가져오는 중...';const response=await fetch('/v1/mcp/notion/sync',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({query})});const body=await response.json();status.textContent=response.ok?JSON.stringify(body,null,2):(body.detail||'동기화 실패')}</script></body></html>"""
 
 
-def _configured_mcp_client() -> MCPToolClient | None:
-    raw_command = os.environ.get("AUTOMATE_JEV_MCP_COMMAND", "").strip()
+def _configured_mcp_client(variable: str) -> MCPToolClient | None:
+    raw_command = os.environ.get(variable, "").strip()
     if not raw_command:
         return None
     command = tuple(shlex.split(raw_command, posix=os.name != "nt"))
@@ -76,12 +81,20 @@ def _env_flag(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"} if value else default
 
 
+def _configured_progress_summarizer() -> GeminiProgressSummarizer | None:
+    if not _env_flag("AUTOMATE_JEV_LLM_ENABLED"):
+        return None
+    api_key, model = load_gemini_settings()
+    return GeminiProgressSummarizer(api_key=api_key, model=model)
+
+
 def create_app(
     *,
     env_path: str | Path = ".env",
     execution_runner: ExecutionRunner | None = None,
     journal_root: str | Path | None = None,
     mcp_client: MCPToolClient | None = None,
+    slack_client: MCPToolClient | None = None,
     memory_root: str | Path | None = None,
 ) -> FastAPI:
     application = FastAPI(title="Automate Jev", version="0.1.0")
@@ -91,9 +104,14 @@ def create_app(
     bin_directory = repository_root / "windows-host" / "bin"
     execution_journal_root = Path(journal_root or repository_root / ".automate-jev" / "web")
     semantic_memory_root = Path(memory_root or repository_root / ".automate-jev" / "memory")
-    notion_client = mcp_client or _configured_mcp_client()
+    notion_client = mcp_client or _configured_mcp_client("AUTOMATE_JEV_MCP_COMMAND")
+    slack_mcp_client = slack_client or _configured_mcp_client("AUTOMATE_JEV_SLACK_MCP_COMMAND")
     notion_parent_id = os.environ.get("NOTION_ROUTINE_PARENT_ID", "").strip()
+    daily_progress_parent_id = os.environ.get("NOTION_DAILY_PROGRESS_PARENT_ID", "").strip()
+    project_root_page_id = os.environ.get("NOTION_PROJECT_ROOT_PAGE_ID", "").strip()
     notion_publish_enabled = _env_flag("NOTION_PUBLISH_ENABLED")
+    progress_summarizer = _configured_progress_summarizer()
+    slack_search_tool = os.environ.get("AUTOMATE_JEV_SLACK_SEARCH_TOOL", "slack-search-messages").strip()
 
     async def native_runner(
         workflow: WorkflowDefinition,
@@ -162,6 +180,33 @@ def create_app(
                 parent_id=notion_parent_id,
             )
             return {"source": "notion-mcp", "parent_id": notion_parent_id, "result": result}
+        except ContractError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from None
+
+    @application.post("/v1/mcp/slack/daily-progress")
+    async def sync_daily_progress(document: dict[str, object] = Body(...)) -> dict[str, object]:
+        raw_day = document.get("date", date.today().isoformat())
+        query = document.get("query", "")
+        if not isinstance(raw_day, str) or not isinstance(query, str):
+            raise HTTPException(status_code=400, detail="date and query must be strings")
+        try:
+            progress_day = date.fromisoformat(raw_day)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD") from None
+        if slack_mcp_client is None or notion_client is None:
+            raise HTTPException(status_code=503, detail="Slack and Notion MCP clients are required")
+        try:
+            service = DailyProgressService(
+                slack=SlackMCP(slack_mcp_client, search_tool=slack_search_tool),
+                notion=NotionMCP(notion_client),
+                memory=LocalMemoryStore(semantic_memory_root),
+                notion_parent_id=daily_progress_parent_id,
+                project_root_page_id=project_root_page_id,
+                publish_enabled=notion_publish_enabled,
+                summarizer=progress_summarizer,
+            )
+            progress = await service.collect_and_publish(progress_day, query=query)
+            return {"source": "slack-mcp", **progress.payload()}
         except ContractError as error:
             raise HTTPException(status_code=400, detail=str(error)) from None
 
