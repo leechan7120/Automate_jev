@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "workflow_id": "local-portal-notepad-upload",
+  "allowed_root": "D:/compe/skku_AI_hack/demo-data",
+  "steps": [
+    {
+      "id": "download-sample",
+      "domain": "browser",
+      "action_id": "portal.download-sample",
+      "success": {"download_exists": "sample.txt"},
+      "risk": "safe"
+    },
+    {
+      "id": "fill-text",
+      "domain": "desktop",
+      "action_id": "notepad.fill-required-text",
+      "success": {"text_contains": "DEMO_APPROVED"},
+      "risk": "safe"
+    },
+    {
+      "id": "upload-sample",
+      "domain": "browser",
+      "action_id": "portal.upload-sample",
+      "success": {"browser_text_visible": "등록되었습니다"},
+      "risk": "confirm"
+    }
+  ],
+  "completion": {
+    "all": [
+      {"browser_text_visible": "등록되었습니다"},
+      {"browser_url_matches": "*/complete"}
+    ]
+  }
+}
+
