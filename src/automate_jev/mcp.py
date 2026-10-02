@@ -24,7 +24,7 @@ class MCPStdioClient:
     """Minimal MCP JSON-RPC client for a local server process."""
 
     command: tuple[str, ...]
-    startup_timeout: float = 10.0
+    startup_timeout: float = 60.0
     request_timeout: float = 30.0
     _process: asyncio.subprocess.Process | None = None
     _ids: Any = None
@@ -41,7 +41,7 @@ class MCPStdioClient:
             *self.command,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=None,
         )
         await self._request(
             "initialize",
