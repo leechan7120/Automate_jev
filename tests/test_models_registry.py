@@ -59,3 +59,17 @@ def test_registry_limits_candidate_count():
     actions = [make_action(id=f"demo.fill-{index}") for index in range(13)]
     with pytest.raises(ContractError, match="1 to 12"):
         registry.replace(actions)
+
+
+def test_candidate_description_exposes_contract_but_not_arguments():
+    registry = ActionRegistry("demo-session")
+    action = make_action(
+        preconditions=({"type": "fact_equals", "key": "filled", "value": False},)
+    )
+    registry.replace([action])
+
+    description = registry.candidate_descriptions()[action.id]
+
+    assert '"preconditions"' in description
+    assert '"filled"' in description
+    assert "DEMO_APPROVED" not in description

@@ -18,7 +18,10 @@ async def successful_runner(workflow, provider, session_id):
 def test_health_and_fixture_video_extraction(tmp_path):
     client = TestClient(create_app(env_path=tmp_path / "missing.env"))
     assert client.get("/health").json() == {"status": "ok"}
-    assert "Workflow" in client.get("/").text
+    page = client.get("/").text
+    assert "Workflow" in page
+    assert ".join('\\n')" in page
+    assert ".join('\n')" not in page
 
     response = client.post(
         "/v1/workflows/extract",

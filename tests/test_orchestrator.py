@@ -69,6 +69,29 @@ async def test_unknown_candidate_and_low_confidence_do_not_execute(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_safe_action_uses_risk_aware_confidence_threshold(tmp_path):
+    orchestrator, runtime, _ = build(tmp_path, confidence=0.55)
+
+    result = await orchestrator.run_next(goal="fill", idempotency_key="run-safe:step-1")
+
+    assert result.status is RunStatus.SUCCESS
+    assert result.confidence == 0.55
+    assert runtime.executions == 1
+
+
+@pytest.mark.asyncio
+async def test_confirm_action_keeps_high_confidence_threshold(tmp_path):
+    confirm = action(risk=Risk.CONFIRM, effect="upload")
+    orchestrator, runtime, _ = build(tmp_path, confidence=0.55, chosen_action=confirm)
+
+    result = await orchestrator.run_next(goal="upload", idempotency_key="run-confirm:step-1")
+
+    assert result.status is RunStatus.ABSTAINED
+    assert "confirm action" in result.detail
+    assert runtime.executions == 0
+
+
+@pytest.mark.asyncio
 async def test_confirm_action_never_executes_without_approval(tmp_path):
     confirm = action(risk=Risk.CONFIRM, effect="upload")
     orchestrator, runtime, _ = build(tmp_path, chosen_action=confirm)

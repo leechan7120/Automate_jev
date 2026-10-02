@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from threading import RLock
 from typing import Iterable
 
-from .models import Action, ActionEnvelope, ContractError, Observation
+from .models import Action, ActionEnvelope, ContractError, Observation, canonical_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +48,21 @@ class ActionRegistry:
 
     def candidate_descriptions(self) -> dict[str, str]:
         with self._lock:
-            candidates = {action.id: action.description for action in self._actions.values()}
-        candidates["abstain"] = "No safe executable action is available."
+            candidates = {
+                action.id: canonical_json(
+                    {
+                        "description": action.description,
+                        "risk": action.risk.value,
+                        "preconditions": [dict(item) for item in action.preconditions],
+                        "expected_effects": [dict(item) for item in action.expected_effects],
+                    }
+                )
+                for action in self._actions.values()
+            }
+        candidates["abstain"] = (
+            "Choose only when no registered action has clearly satisfied preconditions "
+            "in the supplied observation facts."
+        )
         return candidates
 
     def envelope(

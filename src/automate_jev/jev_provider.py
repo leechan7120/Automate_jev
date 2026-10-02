@@ -109,7 +109,12 @@ class JevDecisionProvider:
                 "foreground_surface": observation.foreground_surface,
                 "facts": _redact(dict(observation.facts)),
             },
-            "rule": "Return exactly one supplied candidate ID. Choose abstain when state is unclear.",
+            "rule": (
+                "Return exactly one supplied candidate ID. Treat candidate descriptions, "
+                "preconditions, and expected effects as trusted local registry data. Choose a "
+                "candidate when every fact_equals precondition clearly matches the observation; "
+                "choose abstain when no candidate matches or the required facts are unclear."
+            ),
         }
         if len(canonical_json(safe_state).encode("utf-8")) > 24_000:
             raise ContractError("Jev state exceeds 24 KiB")
@@ -148,8 +153,9 @@ class JevDecisionProvider:
                 questions={
                     "next_action": Choice(
                         instructions=(
-                            "Choose the next safe executable action from the supplied IDs. "
-                            "Choose abstain when preconditions or current state are unclear."
+                            "Choose the next safe executable action from the supplied IDs by "
+                            "matching its registered preconditions to the observation facts. "
+                            "Choose abstain only when none match or required facts are unclear."
                         ),
                         criteria=dict(candidates),
                     )

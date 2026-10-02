@@ -99,7 +99,13 @@ async def run_integrated_demo(
             "provider": provider_mode.upper(),
             "status": result.status.value,
             "action_id": result.action_id,
+            "confidence": result.confidence,
+            "detail": result.detail,
             "effect_observed": final_observation.facts.get("required_text_present") is True,
+            "final_observation": {
+                "foreground_surface": final_observation.foreground_surface,
+                "facts": dict(final_observation.facts),
+            },
             "journal_state": (
                 orchestrator.journal.state(f"{session_id}:step-1").value
                 if orchestrator.journal.state(f"{session_id}:step-1") is not None

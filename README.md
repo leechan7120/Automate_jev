@@ -47,7 +47,7 @@ Host는 현재 `notepad.fill-required-text`와 격리 테스트용 `smoke-target
 uv run python -m automate_jev.windows_ui_smoke
 ```
 
-Jev 판단부터 정책, journal, Windows Host, 결과 검증까지 하나의 경로로 실행하려면 통합 데모를 사용합니다. 기본값은 재현 가능한 `FIXTURE`이며 실 API는 명시적으로 선택해야 합니다. 두 모드 모두 confidence `0.8` 미만이면 입력하지 않습니다.
+Jev 판단부터 정책, journal, Windows Host, 결과 검증까지 하나의 경로로 실행하려면 통합 데모를 사용합니다. 기본값은 재현 가능한 `FIXTURE`이며 실 API는 명시적으로 선택해야 합니다. 로컬 정책으로 다시 검증되는 `safe` action은 confidence `0.5`, 승인이나 외부 부작용이 필요한 action은 `0.8`을 최소값으로 사용합니다. confidence가 위험도를 낮추거나 승인 절차를 우회할 수는 없습니다.
 
 ```powershell
 uv run python -m automate_jev.integrated_demo --provider fixture
@@ -79,3 +79,5 @@ uv run automate-jev-api
 전체 10시간 계획은 [docs/HACKATHON_10H_PLAN.md](docs/HACKATHON_10H_PLAN.md)를 참고하세요.
 
 공공AX Series 4의 실제 화면 녹화 기능으로 통합 데모를 녹화하고 Gemini live 추출까지 통과한 재현 기록은 [docs/ACTUAL_RECORDING_TEST.md](docs/ACTUAL_RECORDING_TEST.md)에 있습니다.
+
+실제 영상을 눈으로 재생 확인하고, Gemini live 추출 → 사이드카 비교 → 웹 검토 → Live Jev 판단 → Windows Host 입력 → verifier/journal 확정까지 사용자 화면에서 실행한 결과는 [docs/USER_JOURNEY_E2E.md](docs/USER_JOURNEY_E2E.md)에 있습니다.
