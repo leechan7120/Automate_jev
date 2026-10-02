@@ -268,7 +268,22 @@ def _page_id(result: Mapping[str, Any]) -> str:
                 return nested
     structured = result.get("structuredContent")
     if isinstance(structured, Mapping):
-        return _page_id(structured)
+        nested = _page_id(structured)
+        if nested:
+            return nested
+    content = result.get("content")
+    if isinstance(content, (list, tuple)):
+        for item in content:
+            if not isinstance(item, Mapping) or item.get("type") != "text":
+                continue
+            try:
+                decoded = json.loads(str(item.get("text", "")))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(decoded, Mapping):
+                nested = _page_id(decoded)
+                if nested:
+                    return nested
     return ""
 
 

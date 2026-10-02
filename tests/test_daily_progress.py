@@ -7,6 +7,7 @@ from automate_jev.memory import LocalMemoryStore
 from automate_jev.notion import NotionMCP
 from automate_jev.progress_summarizer import ProjectSummary, ProgressSummary
 from automate_jev.slack import SlackMCP
+from automate_jev.daily_progress import _page_id
 
 
 class FakeMCP:
@@ -111,6 +112,12 @@ class StaticSummarizer:
                 next_actions=("Deploy worker",),
             ),),
         )
+
+
+def test_page_id_accepts_json_text_content_response():
+    assert _page_id({
+        "content": [{"type": "text", "text": '{"page_id":"daily-page-1"}'}],
+    }) == "daily-page-1"
 
 
 @pytest.mark.asyncio
