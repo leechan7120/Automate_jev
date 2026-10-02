@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 dist/
 build/
+windows-host/bin/
 .automate-jev/
 .env
 .env.*

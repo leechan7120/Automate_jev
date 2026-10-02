@@ -5,11 +5,27 @@ from typing import Any
 
 from .bridge import BridgeError, JsonLinesBridgeClient
 from .models import ActionEnvelope, ContractError, Observation
+from .registry import RegistrySnapshot
 
 
 class BridgeRuntimeAdapter:
     def __init__(self, bridge: JsonLinesBridgeClient) -> None:
         self.bridge = bridge
+
+    async def register(self, snapshot: RegistrySnapshot) -> None:
+        result = await self.bridge.call(
+            "register_actions",
+            {
+                "session_id": snapshot.session_id,
+                "registry_version": snapshot.version,
+                "actions": [
+                    {"id": action.id, "action_hash": action.action_hash}
+                    for action in snapshot.actions
+                ],
+            },
+        )
+        if result.get("registered") != len(snapshot.actions):
+            raise ContractError("Windows Host did not register every action")
 
     async def observe(self) -> Observation:
         result = await self.bridge.call("observe")
