@@ -204,9 +204,14 @@ class DailyProgressService:
         page_id = str(marker_data.get("page_id", "")).strip()
         title = f"Daily Progress - {target_day.isoformat()}"
         if page_id:
-            result = await self.notion.update_page(page_id=page_id, title=title, content=content)
-            status = "updated"
-        else:
+            try:
+                result = await self.notion.update_page(page_id=page_id, title=title, content=content)
+                status = "updated"
+            except ContractError as error:
+                if not _is_missing_notion_page(error):
+                    raise
+                page_id = ""
+        if not page_id:
             matches = await self.notion.search(title) if marker.exists() else ()
             existing = next((page for page in matches if page.title == title), None)
             if existing is not None:
@@ -377,9 +382,10 @@ def _format_next_day_agenda(day: date, history: list[dict[str, str]]) -> str:
         "## 검토할 문제와 수정 사항",
     ]
     correction_items = _unique(corrections)
-    lines.extend(f"- {item}" for item in correction_items)
     if not correction_items:
         lines.append("- None identified.")
+    else:
+        lines.extend(f"- {item}" for item in correction_items)
     lines.extend(("", "## 논의 안건"))
     discussion_items = _unique(discussions)
     lines.extend(f"- {item}" for item in discussion_items)
