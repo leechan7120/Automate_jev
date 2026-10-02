@@ -50,6 +50,7 @@ def _default_client_factory(api_key: str) -> Any:
 class GeminiProgressSummarizer:
     api_key: str = field(repr=False)
     model: str
+    fallback_model: str = "gemini-3.5-flash-lite"
     deadline_seconds: float = 30.0
     client_factory: Callable[[str], Any] = field(default=_default_client_factory, repr=False)
 
@@ -58,6 +59,8 @@ class GeminiProgressSummarizer:
             raise ContractError("Gemini API key is required")
         if not self.model.strip() or len(self.model) > 128:
             raise ContractError("Gemini model must be configured with 1 to 128 characters")
+        if not self.fallback_model.strip() or len(self.fallback_model) > 128:
+            raise ContractError("Gemini fallback model must be configured with 1 to 128 characters")
         if not 5 <= self.deadline_seconds <= 120:
             raise ContractError("Gemini summary deadline must be between 5 and 120 seconds")
 
@@ -73,11 +76,12 @@ class GeminiProgressSummarizer:
         client = self.client_factory(self.api_key)
         try:
             async with asyncio.timeout(self.deadline_seconds):
-                response = await client.aio.models.generate_content(
-                    model=self.model,
-                    contents=prompt,
-                    config={"response_mime_type": "application/json"},
-                )
+                try:
+                    response = await _generate_content(client, self.model, prompt)
+                except Exception as error:
+                    if self.fallback_model == self.model or not _is_transient_error(error):
+                        raise
+                    response = await _generate_content(client, self.fallback_model, prompt)
             raw = str(getattr(response, "text", ""))
             if not raw:
                 raise ValueError("Gemini returned an empty summary")
@@ -91,6 +95,22 @@ class GeminiProgressSummarizer:
                     await asyncio.wait_for(close(), timeout=3)
                 except Exception:
                     pass
+
+
+async def _generate_content(client: Any, model: str, prompt: str) -> Any:
+    return await client.aio.models.generate_content(
+        model=model,
+        contents=prompt,
+        config={"response_mime_type": "application/json"},
+    )
+
+
+def _is_transient_error(error: Exception) -> bool:
+    status_code = getattr(error, "status_code", None)
+    if status_code in {429, 500, 502, 503, 504}:
+        return True
+    message = str(error)
+    return any(marker in message for marker in ("429", "500", "502", "503", "504"))
 def _prompt(messages: tuple[SlackMessage, ...], existing_root: str) -> str:
     evidence = "\n".join(
         f"[{message.timestamp or 'unknown'} / {message.channel or 'unknown'} / {message.author or 'unknown'}] {_redact(message.text)}"

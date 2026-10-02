@@ -48,3 +48,47 @@ async def test_gemini_progress_summarizer_returns_structured_summary():
     assert result.implementation_approach.startswith("Slack MCP")
     assert result.projects[0].name == "Automate Jev"
     assert result.projects[0].next_actions == ("Deploy the worker",)
+
+
+class BusyAsyncAPI:
+    def __init__(self):
+        self.models = []
+
+    async def generate_content(self, **kwargs):
+        self.models.append(kwargs["model"])
+        if len(self.models) == 1:
+            raise RuntimeError("503 UNAVAILABLE")
+        return FakeResponse()
+
+    async def aclose(self):
+        pass
+
+
+class BusyAio:
+    def __init__(self):
+        self.models = BusyAsyncAPI()
+
+    async def aclose(self):
+        pass
+
+
+class BusyClient:
+    def __init__(self):
+        self.aio = BusyAio()
+
+
+@pytest.mark.asyncio
+async def test_gemini_progress_summarizer_uses_fallback_for_transient_failure():
+    client = BusyClient()
+    summarizer = GeminiProgressSummarizer(
+        api_key="test-key",
+        model="gemini-3.8-flash",
+        client_factory=lambda _: client,
+    )
+
+    result = await summarizer.summarize(
+        messages=(SlackMessage("m-1", "eng", "chanh", "API shipped"),),
+    )
+
+    assert result.project_overview == "Slack-driven progress capture"
+    assert client.aio.models.models == ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
