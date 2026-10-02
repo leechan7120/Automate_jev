@@ -40,4 +40,3 @@ async def test_verifier_returns_unknown_without_reexecution():
     )
     assert status is VerificationStatus.UNKNOWN
     assert calls > 1
-

@@ -111,4 +111,3 @@ async def test_stale_revision_fails_closed(tmp_path):
     assert result.status is RunStatus.STALE_ACTION
     assert runtime.executions == 0
     assert orchestrator.journal.state("run-1:step-1") is JournalState.UNKNOWN
-

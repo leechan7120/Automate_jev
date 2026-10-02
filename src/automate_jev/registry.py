@@ -87,4 +87,3 @@ class ActionRegistry:
                 raise ContractError("action hash mismatch")
             if envelope.is_expired():
                 raise ContractError("action expired")
-

@@ -37,4 +37,3 @@ class SimulatedRuntime:
             if effect.get("type") != "fact_equals":
                 raise ContractError("unsupported simulated effect")
             self.facts[str(effect["key"])] = effect.get("value")
-

@@ -101,4 +101,3 @@ class PolicyGate:
             if approval is None:
                 raise ContractError("approval required")
             self._approvals.verify(approval, envelope)
-

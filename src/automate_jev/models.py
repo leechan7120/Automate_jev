@@ -166,4 +166,3 @@ class Decision:
             raise ContractError("confidence must be numeric")
         if not math.isfinite(self.confidence) or not 0 <= self.confidence <= 1:
             raise ContractError("confidence must be between 0 and 1")
-

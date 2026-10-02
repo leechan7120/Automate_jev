@@ -32,4 +32,3 @@ py -m venv .venv
 5. `confirm` action은 올바른 승인 증표 없이는 실행하지 않습니다.
 
 전체 10시간 계획은 [docs/HACKATHON_10H_PLAN.md](docs/HACKATHON_10H_PLAN.md)를 참고하세요.
-

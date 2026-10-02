@@ -27,4 +27,3 @@ jobs:
         run: python -m pytest
       - name: Demo smoke test
         run: python -m automate_jev.demo
-

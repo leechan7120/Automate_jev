@@ -61,4 +61,3 @@ def test_declared_safe_cannot_downgrade_upload():
     envelope = envelope_for(action_for("upload", Risk.SAFE))
     with pytest.raises(ContractError, match="does not match"):
         PolicyGate(ApprovalService()).authorize(envelope, None)
-

@@ -145,4 +145,3 @@ class AgentOrchestrator:
             JournalState.COMMITTED,
         )
         return RunResult(RunStatus.SUCCESS, action_id=decision.action_id)
-

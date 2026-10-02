@@ -45,4 +45,3 @@ async def verify_until_stable(
         index += 1
         await asyncio.sleep(min(delay, max(0, deadline_seconds - (monotonic() - started))))
     return VerificationStatus.UNKNOWN
-

@@ -168,4 +168,3 @@ class ExecutionJournal:
         finally:
             if os.path.exists(temporary_name):
                 os.unlink(temporary_name)
-

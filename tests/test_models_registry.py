@@ -59,4 +59,3 @@ def test_registry_limits_candidate_count():
     actions = [make_action(id=f"demo.fill-{index}") for index in range(13)]
     with pytest.raises(ContractError, match="1 to 12"):
         registry.replace(actions)
-

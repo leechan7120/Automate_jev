@@ -60,4 +60,3 @@ def test_corruption_blocks_startup(tmp_path):
     journal.log_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     with pytest.raises(JournalCorruption, match="checksum"):
         ExecutionJournal(tmp_path)
-
