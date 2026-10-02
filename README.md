@@ -13,6 +13,8 @@ Jev를 제한된 후보 중 다음 행동을 고르는 decision router로 사용
 - bounded verifier와 `SUCCESS / FAILURE / UNKNOWN`
 - provider/runtime protocol과 fail-closed orchestrator
 - deterministic simulation demo
+- `.env`를 전역 환경에 주입하지 않는 Jev live provider
+- 비밀 환경 변수를 전달하지 않는 Windows Host JSON-lines client
 
 ## 실행
 
@@ -22,6 +24,14 @@ py -m venv .venv
 .venv\Scripts\python -m pytest
 .venv\Scripts\python -m automate_jev.demo
 ```
+
+실 Jev 연결만 점검하려면 `.env.example`을 참고해 `.env`를 만든 뒤 다음을 실행합니다. 키 값은 출력되지 않으며 `.env`는 Git에서 제외됩니다.
+
+```powershell
+uv run python -m automate_jev.live_smoke --env-file .env
+```
+
+Windows Host 계약은 [docs/BRIDGE_PROTOCOL.md](docs/BRIDGE_PROTOCOL.md)에 정의되어 있습니다. 현재 `mock_bridge`로 실제 subprocess JSON-lines 왕복과 stale revision 거부를 테스트하며, 다음 단계에서 C# Host가 같은 계약을 구현합니다.
 
 ## 안전 불변식
 

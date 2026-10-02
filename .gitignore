@@ -7,3 +7,6 @@ __pycache__/
 dist/
 build/
 .automate-jev/
+.env
+.env.*
+!.env.example
