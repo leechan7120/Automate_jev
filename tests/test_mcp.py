@@ -59,3 +59,30 @@ for line in sys.stdin:
     await client.close()
 
     assert result["content"][0]["text"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_stdio_client_preserves_tool_error_detail(tmp_path):
+    server = tmp_path / "mcp_error_server.py"
+    server.write_text(
+        """
+import json
+import sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get('method') == 'initialize':
+        result = {'protocolVersion': '2025-06-18', 'capabilities': {}, 'serverInfo': {'name': 'test'}}
+    elif message.get('method') == 'tools/call':
+        result = {'isError': True, 'content': [{'type': 'text', 'text': 'missing_scope'}]}
+    else:
+        continue
+    if 'id' in message:
+        print(json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result}), flush=True)
+""",
+        encoding="utf-8",
+    )
+    client = MCPStdioClient((sys.executable, str(server)))
+
+    with pytest.raises(Exception, match="missing_scope"):
+        await client.call_tool(server="slack", tool="slack-search-messages", arguments={})
+    await client.close()

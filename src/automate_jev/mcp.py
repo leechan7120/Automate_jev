@@ -82,7 +82,8 @@ class MCPStdioClient:
             timeout=self.request_timeout,
         )
         if response.get("isError") is True:
-            raise ContractError(f"MCP tool failed: {tool}")
+            detail = _tool_error_detail(response)
+            raise ContractError(f"MCP tool failed: {tool}: {detail}")
         return response
 
     async def _request(self, method: str, params: Mapping[str, Any], *, timeout: float) -> Mapping[str, Any]:
@@ -115,6 +116,24 @@ class MCPStdioClient:
             raise ContractError("MCP server is not running")
         process.stdin.write((json.dumps({"jsonrpc": "2.0", "method": method, "params": dict(params)}) + "\n").encode())
         await process.stdin.drain()
+
+
+def _tool_error_detail(response: Mapping[str, Any]) -> str:
+    content = response.get("content")
+    if isinstance(content, (list, tuple)):
+        text = " ".join(
+            str(item.get("text", ""))
+            for item in content
+            if isinstance(item, Mapping) and item.get("text")
+        ).strip()
+        if text:
+            return text[:500]
+    structured = response.get("structuredContent")
+    if isinstance(structured, Mapping):
+        error = structured.get("error", structured.get("message", ""))
+        if error:
+            return str(error)[:500]
+    return "unknown MCP tool error"
 
 
 @dataclass(slots=True)
