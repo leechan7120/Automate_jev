@@ -64,7 +64,7 @@ uv run automate-jev-api
 
 `POST /v1/mcp/notion/sync`는 `{"query":"daily routine"}`를 받아 공식 Notion MCP의 검색 결과를 fetch하고 `.automate-jev/memory/semantic`에 저장합니다. MCP client는 `AUTOMATE_JEV_MCP_COMMAND` 환경 변수의 stdio command로 구성합니다. `POST /v1/mcp/notion/publish-routine`은 `NOTION_ROUTINE_PARENT_ID`로 지정한 `Routines` 페이지 아래에 새 routine 페이지를 만들며, `NOTION_PUBLISH_ENABLED=true`일 때만 동작합니다.
 
-Slack MCP는 `POST /v1/mcp/slack/daily-progress`로 특정 날짜의 Slack 메시지를 검색합니다. `automate-jev-daily-progress` worker가 배포 후 10분마다 실행되어 Slack 메시지를 `data/episodic/slack-daily-YYYY-MM-DD.md`에 저장하고, `NOTION_DAILY_PROGRESS_PARENT_ID` 아래에 `Daily Progress - YYYY-MM-DD` 페이지를 생성 또는 갱신합니다. Slack 스냅샷이 이전 실행과 같으면 Gemini와 Notion 호출을 건너뛰며, 변경이 있을 때만 LLM 정리와 Notion 갱신을 수행합니다. Gemini/Slack/Notion 오류가 발생하면 5분 후 자동 재시도합니다. Notion에 발행할 때는 Gemini가 Slack 근거를 반드시 정리하며, LLM이 없거나 실패하면 raw Slack 내용을 발행하지 않고 작업이 실패합니다. Daily Progress에는 Gemini가 정리한 진행, 논의, 결정, 프로젝트별 next action이 들어갑니다. 각 프로젝트 페이지는 `NOTION_PROJECT_ROOT_PAGE_ID` 아래에 자동 생성되고 이후 날짜에는 같은 페이지에 갱신됩니다. Project Root는 날짜별 원문 로그가 아니라 Gemini가 갱신한 현재 프로젝트 전체 개요, 구현 방식, 전체 진행 상태, 프로젝트별 상태를 담습니다.
+Slack MCP는 `POST /v1/mcp/slack/daily-progress`로 특정 날짜의 Slack 메시지를 검색합니다. `automate-jev-daily-progress` worker가 배포 후 3분(`180초`)마다 실행되어 Slack 메시지를 `data/episodic/slack-daily-YYYY-MM-DD.md`에 저장하고, `NOTION_DAILY_PROGRESS_PARENT_ID` 아래에 `Daily Progress - YYYY-MM-DD` 페이지를 생성 또는 갱신합니다. Slack 스냅샷이 이전 실행과 같으면 Gemini와 Notion 호출을 건너뛰며, 변경이 있을 때만 LLM 정리와 Notion 갱신을 수행합니다. Gemini/Slack/Notion 오류가 발생해도 3분 후 다시 실행합니다. Notion에 발행할 때는 Gemini가 Slack 근거를 반드시 정리하며, LLM이 없거나 실패하면 raw Slack 내용을 발행하지 않고 작업이 실패합니다. Daily Progress에는 Gemini가 정리한 진행, 논의, 결정, 프로젝트별 next action이 들어갑니다. 각 프로젝트 페이지는 `NOTION_PROJECT_ROOT_PAGE_ID` 아래에 자동 생성되고 이후 날짜에는 같은 페이지에 갱신됩니다. Project Root는 날짜별 원문 로그가 아니라 Gemini가 갱신한 현재 프로젝트 전체 개요, 구현 방식, 전체 진행 상태, 프로젝트별 상태를 담습니다.
 
 브라우저 UI 없이도 `http://127.0.0.1:8000`에서 기존 Workflow 검토와 실행 API를 사용할 수 있습니다. 개인 사용 기록과 외부 서비스 데이터는 MCP adapter를 통해 수집하고 local memory와 routine learner에서 처리합니다.
 
@@ -122,7 +122,7 @@ NOTION_PROJECT_ROOT_PAGE_ID     자동 갱신할 프로젝트 root 문서의 페
 NOTION_PUBLISH_ENABLED     routine 쓰기 허용 여부 (기본 false, 명시적으로 true 필요)
 ```
 
-Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. 첫 이벤트를 생성한 뒤에도 worker는 종료되지 않고, 성공하면 10분(`600초`)마다, 실패하면 5분(`300초`) 후 다시 실행됩니다. 따라서 매 실행마다 현재 날짜의 Slack 데이터를 새로 검색하고, 기존 일정은 중복 생성하지 않으면서 새로 확정된 일정은 계속 Calendar에 추가합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간이 확정됐지만 종료 시간이 없는 timed event는 1시간 일정으로 생성하며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
+Calendar worker는 Slack 대화를 LLM으로 판정한 뒤, 날짜와 업무가 모두 확정된 이벤트만 실제 Google Calendar API에 생성합니다. 첫 이벤트를 생성한 뒤에도 worker는 종료되지 않고 성공·실패와 관계없이 3분(`180초`)마다 다시 실행됩니다. 따라서 매 실행마다 현재 날짜의 Slack 데이터를 새로 검색하고, 기존 일정은 중복 생성하지 않으면서 새로 확정된 일정은 계속 Calendar에 추가합니다. 날짜가 질문, 제안, 예정, 미정 상태이거나 무엇을 할지 확정되지 않은 경우에는 이벤트를 만들지 않습니다. 시작 시간이 확정됐지만 종료 시간이 없는 timed event는 1시간 일정으로 생성하며, 시간 없이 날짜만 확정된 경우에는 종일 일정으로 생성합니다. Calendar 이벤트 생성 결과는 `data/calendar-events`에 기록되어 같은 확정 이벤트를 중복 생성하지 않습니다. Calendar MCP는 `AUTOMATE_JEV_CALENDAR_MCP_COMMAND`로 Notion MCP와 별도로 연결합니다.
 
 Daily Progress worker는 시작할 때 고정된 과거 3일의 한국어 데모 기록을 memory에 seed합니다. seed 날짜의 기존 기록은 교체되므로 이전 형식이나 잘못된 내용이 누적되지 않습니다. 로컬에서 같은 seed를 준비하려면 다음 명령을 실행합니다.
 
