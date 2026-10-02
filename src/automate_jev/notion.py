@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import re
 from typing import Any, Mapping
 
 from .mcp import MCPToolClient
@@ -150,11 +151,11 @@ def _result_text(result: Mapping[str, Any]) -> str:
     for key in ("structuredContent", "content"):
         value: Any = result.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return _clean_fetch_text(value)
         if isinstance(value, Mapping):
             nested = value.get("content", value.get("text", ""))
             if isinstance(nested, str) and nested.strip():
-                return nested.strip()
+                return _clean_fetch_text(nested)
         if isinstance(value, (list, tuple)):
             text = "\n".join(
                 str(item.get("text", ""))
@@ -162,8 +163,26 @@ def _result_text(result: Mapping[str, Any]) -> str:
                 if isinstance(item, Mapping) and item.get("type") == "text"
             ).strip()
             if text:
-                return text
+                return _clean_fetch_text(text)
     return ""
+
+
+def _clean_fetch_text(value: str) -> str:
+    text = value.strip()
+    for _ in range(5):
+        try:
+            decoded = json.loads(text)
+        except (TypeError, ValueError):
+            break
+        if not isinstance(decoded, Mapping) or not isinstance(decoded.get("content"), str):
+            break
+        text = decoded["content"].strip()
+    match = re.search(r"<content>\s*(.*?)\s*</content>", text, re.DOTALL)
+    if match:
+        text = match.group(1).strip()
+    if text in {"<empty-block/>", "<empty-block />"}:
+        return ""
+    return text
 
 
 def _page_from_mapping(value: Mapping[str, Any]) -> NotionPage:

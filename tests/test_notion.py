@@ -114,3 +114,28 @@ async def test_notion_fetch_accepts_markdown_content_response():
     assert page.page_id == "page-1"
     assert page.title == "Project Root"
     assert page.text == "# Project Root\n\nOverview"
+
+
+@pytest.mark.asyncio
+async def test_notion_fetch_removes_fetch_metadata_from_content():
+    import json
+
+    class FetchClient:
+        async def call_tool(self, *, server, tool, arguments):
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "metadata": {"type": "page"},
+                        "title": "Project Root",
+                        "content": "<page><content>\n# Human-readable notes\n\n- Decision: ship\n</content></page>",
+                        "verification": {"state": "unverified"},
+                    }),
+                }],
+            }
+
+    page = await NotionMCP(FetchClient()).fetch("page-1")
+
+    assert page.text == "# Human-readable notes\n\n- Decision: ship"
+    assert "metadata" not in page.text
+    assert "verification" not in page.text

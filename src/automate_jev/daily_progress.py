@@ -64,6 +64,7 @@ class DailyProgressService:
                 pass
         version = self._next_version(day)
         content = _format_progress(day, messages, version, summary)
+        notion_content = _format_progress(day, messages, version, summary, include_evidence=False)
         record = MemoryRecord(
             kind=MemoryKind.EPISODIC,
             scope=f"slack-daily-{day.isoformat()}",
@@ -84,7 +85,7 @@ class DailyProgressService:
                 notion_result = await self.notion.update_page(
                     page_id=page_id,
                     title=f"Daily Progress - {day.isoformat()}",
-                    content=content,
+                    content=notion_content,
                 )
                 notion_result = {"status": "updated", "version": version, **notion_result}
             elif marker.exists():
@@ -92,7 +93,7 @@ class DailyProgressService:
             else:
                 notion_result = await self.notion.publish_routine(
                     title=f"Daily Progress - {day.isoformat()}",
-                    content=content,
+                    content=notion_content,
                     parent_id=self.notion_parent_id,
                 )
                 marker.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +167,8 @@ def _format_progress(
     messages: tuple[SlackMessage, ...],
     version: int,
     summary: ProgressSummary,
+    *,
+    include_evidence: bool = True,
 ) -> str:
     lines = [f"# Daily Progress - {day.isoformat()}", "", f"- Document version: v{version}"]
     for title, bullets in (
@@ -177,8 +180,22 @@ def _format_progress(
         lines.extend(f"- {bullet}" for bullet in bullets)
         if not bullets:
             lines.append("- None identified.")
-    evidence = tuple(message.line() for message in messages) or ("- No Slack messages matched this day.",)
-    lines.extend(("", "## Evidence", *evidence))
+    lines.extend(("", "## Projects"))
+    if summary.projects:
+        for project in summary.projects:
+            lines.extend((f"### {project.name}", f"- Overview: {project.overview or 'None identified.'}"))
+            for title, bullets in (
+                ("Progress", project.progress),
+                ("Discussions", project.discussions),
+                ("Decisions", project.decisions),
+                ("Next actions", project.next_actions),
+            ):
+                lines.append(f"- {title}: {'; '.join(bullets) if bullets else 'None identified.'}")
+    else:
+        lines.append("- None identified.")
+    if include_evidence:
+        evidence = tuple(message.line() for message in messages) or ("- No Slack messages matched this day.",)
+        lines.extend(("", "## Evidence", *evidence))
     lines.extend(("", "## Source", "- Slack MCP search", "- Gemini summary when enabled"))
     return "\n".join(lines)[:4_000]
 
