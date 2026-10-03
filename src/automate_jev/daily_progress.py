@@ -54,9 +54,8 @@ class DailyProgressService:
         snapshot_path = self.memory.root / "slack-snapshots" / f"{day.isoformat()}.json"
         fingerprint = _message_fingerprint(messages)
         previous_snapshot = _read_marker(snapshot_path)
-        if previous_snapshot.get("fingerprint") == fingerprint:
-            if self.publish_enabled:
-                await self.prepare_next_day(day)
+        slack_unchanged = previous_snapshot.get("fingerprint") == fingerprint
+        if slack_unchanged and not self.publish_enabled:
             return _unchanged_progress(day, messages, int(previous_snapshot.get("version", 0)))
         if not messages:
             snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,7 +92,11 @@ class DailyProgressService:
                 )
             except (RuntimeError, ContractError):
                 pass
-        version = self._next_version(day)
+        version = (
+            int(previous_snapshot.get("version", 0))
+            if slack_unchanged
+            else self._next_version(day)
+        )
         content = _format_progress(day, messages, version, summary)
         notion_content = _format_progress(day, messages, version, summary, include_evidence=False)
         record = MemoryRecord(
@@ -150,7 +153,7 @@ class DailyProgressService:
                         encoding="utf-8",
                     )
                     notion_result = {"status": "created", "version": version, **notion_result}
-            else:
+            elif not page_id:
                 notion_result = await self.notion.publish_routine(
                     title=f"Daily Progress - {day.isoformat()}",
                     content=notion_content,
@@ -180,7 +183,7 @@ class DailyProgressService:
             json.dumps({"date": day.isoformat(), "fingerprint": fingerprint, "version": version}),
             encoding="utf-8",
         )
-        if self.publish_enabled:
+        if self.publish_enabled and not slack_unchanged:
             await self.prepare_next_day(day)
         return DailyProgress(day, messages, content, record, version, notion_result)
 

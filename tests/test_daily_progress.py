@@ -105,9 +105,9 @@ async def test_daily_progress_does_not_create_duplicate_page_after_restart(tmp_p
     await service.collect_and_publish(date(2026, 10, 3))
     await service.collect_and_publish(date(2026, 10, 3))
 
-    # The first run creates today's page; the next run may create tomorrow's agenda.
+    # Publishing mode rechecks today's page even when Slack has not changed.
     assert [tool for _, tool, _ in client.calls].count("notion-create-pages") == 2
-    assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 0
+    assert [tool for _, tool, _ in client.calls].count("notion-update-page") == 1
 
 
 @pytest.mark.asyncio
